@@ -1,0 +1,121 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // دالة مساعدة للتحقق مما إذا كان المستخدم موظفًا مسجلاً (لديه بريد إلكتروني)
+    function isStaff() {
+      return request.auth != null && (request.auth.token.email != null || request.auth.token.firebase.sign_in_provider != 'anonymous');
+    }
+    
+    // دالة للتحقق من تسجيل الدخول (سواء مجهول أو بإيميل)
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // =========================================================
+    // المستخدمين (إصلاح مشكلة تسجيل الدخول باسم المستخدم)
+    // =========================================================
+    match /users/{userId} {
+      // السماح للجميع بالقراءة (ضروري للتحقق من توفر اسم المستخدم أو الدخول به)
+      allow get, list: if true;
+      
+      // السماح بالكتابة فقط لصاحب الحساب أو الموظفين
+      allow write: if isAuthenticated() && (request.auth.uid == userId || isStaff());
+    }
+
+    // =========================================================
+    // بيانات عامة
+    // =========================================================
+
+    // إعدادات التطبيق
+    match /app_settings/{docId} {
+      allow get, list: if true;
+      allow write: if isStaff();
+    }
+    
+    // السنوات الدراسية (للقسم التعليمي والهوية)
+    match /edu_identity_years/{docId} {
+      allow get, list: if true;
+      allow write: if isStaff();
+    }
+
+    // الهيكل الإداري
+    match /org_structure/{docId} {
+      allow get, list: if true;
+      allow write: if isStaff();
+    }
+    
+    // الاجتماعات والإعلانات
+    match /management_meetings/{docId} {
+      allow get, list: if true;
+      allow write: if isStaff();
+    }
+
+    // طلبات التطوع (Submissions)
+    match /submissions/{docId} {
+      allow create: if true;
+      allow read: if isStaff();
+      allow update, delete: if isStaff();
+    }
+
+    // =========================================================
+    // بنك الدم (ومن أحياها)
+    // =========================================================
+    match /blood_donors/{docId} {
+      allow get, list: if true;
+      allow create: if true; // السماح للضيوف بالتسجيل
+      allow update, delete: if isStaff();
+    }
+    match /blood_requests/{docId} {
+      allow get, list: if true;
+      allow create: if true; // السماح بنشر استغاثة
+      allow update, delete: if isStaff();
+    }
+    
+    match /blood_config/{docId} {
+      allow get, list: if true;
+      allow write: if isStaff();
+    }
+
+    // =========================================================
+    // بيانات خاصة بالموظفين فقط
+    // =========================================================
+
+    match /tasks/{taskId} {
+      allow read: if isAuthenticated();
+      // السماح للمستخدمين المسجلين (بما فيهم anonymous session) بإدارة المهام
+      allow write: if isAuthenticated();
+      
+      // سجل الحركة (Pulse) الخاص بكل مهمة
+      match /pulse/{pulseId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    match /chats/{msgId} {
+      allow read, write: if isStaff();
+    }
+    
+    match /typing_status/{docId} {
+      allow read, write: if isStaff();
+    }
+    
+    match /hr_fines/{fineId} {
+      allow read, write: if isStaff();
+    }
+
+    match /department_settings/{deptId} {
+      allow read: if true; 
+      allow write: if isStaff();
+    }
+    match /department_reports/{reportId} {
+      allow read, write: if isStaff();
+    }
+    
+    // قاعدة احتياطية
+    match /{document=**} {
+      allow read: if isAuthenticated();
+      allow write: if isStaff();
+    }
+  }
+}
