@@ -22,31 +22,25 @@ class ErrorBoundary extends Component<Props, State> {
   };
 
   private onWindowError = (event: ErrorEvent) => {
-    const raw = event.error;
-    const errorObj = raw instanceof Error ? raw : new Error(event.message || "Unknown window error");
-    const extra = `File: ${event.filename || "N/A"}\nLine: ${event.lineno || "N/A"}\nColumn: ${event.colno || "N/A"}`;
-    this.setState({
-      hasError: true,
-      error: errorObj,
-      errorInfo: null,
-      source: "window",
-      extraDetails: extra
-    });
+    // We log window errors but DON'T crash the app UI for them
+    // Many window errors come from browser extensions or injections (like Telegram's webview)
+    // and are not fatal to the React application itself.
+    console.warn("Global Window Error Caught:", event.message, event.filename);
+    
+    // Only crash if it's a very specific fatal error we want to catch, 
+    // otherwise just let React handle its own lifecycle.
+    if (event.message === "Script error." && !event.filename) {
+        // This is almost always a CORS noise error from an injected script.
+        return;
+    }
+    
+    // If you REALLY want to see window errors in the UI, you could use a toast here
+    // but setting hasError: true is too aggressive.
   };
 
   private onUnhandledRejection = (event: PromiseRejectionEvent) => {
-    const reason = event.reason;
-    const errorObj = reason instanceof Error
-      ? reason
-      : new Error(typeof reason === "string" ? reason : JSON.stringify(reason, null, 2));
-
-    this.setState({
-      hasError: true,
-      error: errorObj,
-      errorInfo: null,
-      source: "promise",
-      extraDetails: "Unhandled Promise Rejection"
-    });
+    console.warn("Unhandled Promise Rejection:", event.reason);
+    // Don't crash the app for promise rejections.
   };
 
   public componentDidMount() {
