@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { auth, db } from "../services/firebase";
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously } from "firebase/auth";
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
-import { Mail, Lock, AlertCircle, Palette, Network, Activity, Heart, User as UserIcon, LogIn, UserPlus, Fingerprint, Sparkles, ChevronLeft } from "lucide-react";
+import { Mail, Lock, AlertCircle, Palette, Network, Activity, Heart, User as UserIcon, LogIn, UserPlus, Fingerprint, Sparkles, ChevronLeft, Sun, Moon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface AuthScreenProps {
@@ -10,9 +10,11 @@ interface AuthScreenProps {
   onGuestOrg?: () => void;
   onGuestBlood?: () => void;
   onGuestDonorForm?: () => void;
+  darkMode: boolean;
+  setDarkMode: (val: boolean) => void;
 }
 
-export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, onGuestDonorForm }: AuthScreenProps) {
+export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, onGuestDonorForm, darkMode, setDarkMode }: AuthScreenProps) {
   const [isLogin, setIsLogin] = useState(true);
   
   // Login State
@@ -115,27 +117,35 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
   };
 
   return (
-    <div className="min-h-screen bg-[#020617] flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-indigo-500/30" dir="rtl">
+    <div className="min-h-screen bg-slate-50 dark:bg-[#020617] flex items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-indigo-500/30 transition-colors duration-500" dir="rtl">
+      
+      {/* ── Theme Toggle ── */}
+      <button 
+        onClick={() => setDarkMode(!darkMode)}
+        className="absolute top-6 left-6 z-50 p-3 rounded-2xl bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-white shadow-xl hover:scale-110 active:scale-95 transition-all"
+      >
+        {darkMode ? <Sun size={20} /> : <Moon size={20} />}
+      </button>
       
       {/* ── Background Aesthetics ── */}
       <div className="absolute inset-0 z-0">
-         <motion.div 
+          <motion.div 
             animate={{ scale: [1, 1.2, 1], x: [0, 50, 0], y: [0, 30, 0] }}
             transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-            className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/20 blur-[120px] rounded-full"
-         />
-         <motion.div 
+            className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-indigo-600/10 dark:bg-indigo-600/20 blur-[120px] rounded-full"
+          />
+          <motion.div 
             animate={{ scale: [1, 1.3, 1], x: [0, -40, 0], y: [0, -50, 0] }}
             transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
-            className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-purple-600/20 blur-[150px] rounded-full"
-         />
+            className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] bg-purple-600/10 dark:bg-purple-600/20 blur-[150px] rounded-full"
+          />
          <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-[0.03] pointer-events-none"/>
       </div>
 
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-xl z-10 grid md:grid-cols-12 gap-0 overflow-hidden rounded-[2.5rem] bg-white/5 backdrop-blur-2xl border border-white/10 shadow-[0_32px_64px_rgba(0,0,0,0.5)]"
+        className="w-full max-w-xl z-10 grid md:grid-cols-12 gap-0 overflow-hidden rounded-[2.5rem] bg-white dark:bg-slate-900 border border-slate-200 dark:border-white/10 shadow-[0_32px_64px_rgba(0,0,0,0.1)] dark:shadow-[0_32px_64px_rgba(0,0,0,0.5)]"
       >
         {/* ── Form Side ── */}
         <div className="md:col-span-12 p-8 lg:p-12">
@@ -150,23 +160,27 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
                         src={brandConfig.logoUrl}
                         alt="logo"
                         style={{ height: `${brandConfig.authLogoSize || 112}px` }}
-                        className="relative z-10 w-28 object-contain drop-shadow-2xl brightness-0 invert"
+                        className={`relative z-10 w-28 object-contain drop-shadow-2xl transition-all duration-500 ${brandConfig.invertInDarkMode && darkMode ? 'brightness-0 invert' : ''}`}
                     />
                 </motion.div>
-                <h1 className="text-3xl font-black text-white tracking-tight text-center">معوان <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">تاسك</span></h1>
-                <p className="text-slate-400 text-sm mt-2 font-medium">الجيل القادم من إدارة المهام التطوعية</p>
+                <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white tracking-tight mb-2">
+                      معوان <span className="text-indigo-500 dark:text-indigo-400">تاسك</span>
+                </h1>
+                <p className="text-slate-500 dark:text-slate-400 font-medium text-sm text-center">
+                      {brandConfig?.slogan || "الجيل القادم من إدارة المهام التطوعية"}
+                </p>
             </div>
 
-            <div className="flex bg-white/5 p-1 rounded-2xl mb-8 max-w-[280px] mx-auto border border-white/5">
+            <div className="flex bg-slate-100 dark:bg-white/5 p-1 rounded-2xl mb-8 max-w-[280px] mx-auto border border-slate-200 dark:border-white/5">
                 <button 
                    onClick={() => setIsLogin(true)}
-                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 ${isLogin ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 ${isLogin ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                 >
                     <LogIn size={14}/> دخول
                 </button>
                 <button 
                    onClick={() => setIsLogin(false)}
-                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 ${!isLogin ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                   className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all duration-300 ${!isLogin ? 'bg-purple-600 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
                 >
                     <UserPlus size={14}/> تسجيل
                 </button>
@@ -185,7 +199,7 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
                         <motion.div 
                             initial={{ scale: 0.9, opacity: 0 }} 
                             animate={{ scale: 1, opacity: 1 }}
-                            className="bg-red-500/10 text-red-400 p-4 rounded-2xl text-xs flex items-center gap-3 border border-red-500/20 mb-4"
+                            className="bg-red-500/10 text-red-600 dark:text-red-400 p-4 rounded-2xl text-xs flex items-center gap-3 border border-red-500/20 mb-4"
                         >
                             <AlertCircle size={18} className="shrink-0" />
                             <span className="font-black leading-relaxed">{error}</span>
@@ -195,10 +209,10 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
                     <div className="space-y-4">
                         {isLogin ? (
                             <div className="relative group">
-                                <UserIcon className="absolute top-1/2 -translate-y-1/2 right-4 text-slate-500 group-focus-within:text-indigo-400 transition-colors" size={18} />
+                                <UserIcon className="absolute top-1/2 -translate-y-1/2 right-4 text-slate-400 dark:text-slate-500 group-focus-within:text-indigo-500 transition-colors" size={18} />
                                 <input
                                     required
-                                    className="w-full pr-12 pl-4 py-4 rounded-2xl bg-white/[0.03] border border-white/10 text-white placeholder-slate-500 focus:border-indigo-500/50 focus:bg-white/[0.07] focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium text-sm"
+                                    className="w-full pr-12 pl-4 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder-slate-400 focus:border-indigo-500/50 focus:bg-white dark:focus:bg-white/[0.07] focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium text-sm"
                                     placeholder="البريد الإلكتروني أو اسم المستخدم"
                                     value={loginInput}
                                     onChange={(e) => setLoginInput(e.target.value)}
@@ -210,7 +224,7 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
                                     <Fingerprint className="absolute top-1/2 -translate-y-1/2 right-4 text-slate-500 group-focus-within:text-purple-400 transition-colors" size={18} />
                                     <input
                                         required
-                                        className="w-full pr-12 pl-4 py-4 rounded-2xl bg-white/[0.03] border border-white/10 text-white placeholder-slate-500 focus:border-purple-500/50 focus:bg-white/[0.07] focus:ring-4 focus:ring-purple-500/10 outline-none transition-all font-medium text-sm"
+                                        className="w-full pr-12 pl-4 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder-slate-400 focus:border-purple-500/50 focus:bg-white dark:focus:bg-white/[0.07] focus:ring-4 focus:ring-purple-500/10 outline-none transition-all font-medium text-sm"
                                         placeholder="اسم المستخدم"
                                         value={regUsername}
                                         onChange={(e) => setRegUsername(e.target.value)}
@@ -221,7 +235,7 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
                                     <input
                                         type="email"
                                         required
-                                        className="w-full pr-12 pl-4 py-4 rounded-2xl bg-white/[0.03] border border-white/10 text-white placeholder-slate-500 focus:border-purple-500/50 focus:bg-white/[0.07] focus:ring-4 focus:ring-purple-500/10 outline-none transition-all font-medium text-sm"
+                                        className="w-full pr-12 pl-4 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder-slate-400 focus:border-purple-500/50 focus:bg-white dark:focus:bg-white/[0.07] focus:ring-4 focus:ring-purple-500/10 outline-none transition-all font-medium text-sm"
                                         placeholder="البريد الإلكتروني"
                                         value={regEmail}
                                         onChange={(e) => setRegEmail(e.target.value)}
@@ -235,8 +249,7 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
                             <input
                                 type="password"
                                 required
-                                autoComplete="off"
-                                className="w-full pr-12 pl-4 py-4 rounded-2xl bg-white/[0.03] border border-white/10 text-white placeholder-slate-500 focus:border-indigo-500/50 focus:bg-white/[0.07] focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium text-sm"
+                                className="w-full pr-12 pl-4 py-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/10 text-slate-900 dark:text-white placeholder-slate-400 focus:border-indigo-500/50 focus:bg-white dark:focus:bg-white/[0.07] focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all font-medium text-sm"
                                 placeholder="كلمة المرور"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
@@ -265,11 +278,11 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
             </AnimatePresence>
 
             {/* Premium Public Access Section */}
-            <div className="mt-12 pt-8 border-t border-white/5 transition-opacity duration-1000">
+            <div className="mt-12 pt-8 border-t border-slate-100 dark:border-white/5 transition-opacity duration-1000">
                 <div className="flex items-center gap-4 mb-6">
-                    <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/10"/>
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">بوابات الوصول المفتوحة</span>
-                    <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/10"/>
+                    <div className="h-px flex-1 bg-gradient-to-r from-transparent to-slate-200 dark:to-white/10"/>
+                    <span className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.2em]">بوابات الوصول المفتوحة</span>
+                    <div className="h-px flex-1 bg-gradient-to-l from-transparent to-slate-200 dark:to-white/10"/>
                 </div>
                 
                 <div className="grid grid-cols-1 gap-3 mb-6">
@@ -285,8 +298,8 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
                                     <Heart size={20} fill="currentColor" className="text-white"/>
                                 </div>
                                 <div className="text-right">
-                                    <p className="text-sm font-black text-white">متبرع بالدم</p>
-                                    <p className="text-[10px] text-rose-300/60 font-medium">ساهم في إنقاذ حياة عبر (ومن أحياها)</p>
+                                    <p className="text-sm font-black text-rose-950 dark:text-white">متبرع بالدم</p>
+                                    <p className="text-[10px] text-rose-600 dark:text-rose-300/60 font-medium">ساهم في إنقاذ حياة عبر (ومن أحياها)</p>
                                 </div>
                             </div>
                             <ChevronLeft size={16} className="text-rose-400 group-hover:-translate-x-2 transition-transform"/>
@@ -302,14 +315,14 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
                     ].map((item, idx) => (
                         <motion.button 
                             key={idx}
-                            whileHover={{ y: -4, backgroundColor: "rgba(255,255,255,0.06)" }}
+                            whileHover={{ y: -4, backgroundColor: darkMode ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.02)" }}
                             onClick={item.onClick}
-                            className={`flex flex-col items-center gap-3 p-4 rounded-2xl bg-white/[0.03] border border-white/5 transition-all group`}
+                            className={`flex flex-col items-center gap-3 p-4 rounded-2xl bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/5 transition-all group`}
                         >
-                            <div className={`p-2 rounded-xl bg-${item.color}-500/10 text-${item.color}-400 group-hover:bg-${item.color}-500 group-hover:text-white transition-all shadow-lg`}>
+                            <div className={`p-2 rounded-xl bg-${item.color}-500/10 text-${item.color}-600 dark:text-${item.color}-400 group-hover:bg-${item.color}-500 group-hover:text-white transition-all shadow-lg`}>
                                 <item.icon size={20} />
                             </div>
-                            <span className="text-[9px] font-black text-slate-400 group-hover:text-white transition-colors">{item.label}</span>
+                            <span className="text-[9px] font-black text-slate-500 dark:text-slate-400 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{item.label}</span>
                         </motion.button>
                     ))}
                 </div>

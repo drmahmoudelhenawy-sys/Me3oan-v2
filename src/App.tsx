@@ -244,15 +244,21 @@ export default function App() {
             onGuestOrg={() => handlePublicAccess('org')}
             onGuestBlood={() => handlePublicAccess('blood')}
             onGuestDonorForm={() => handlePublicAccess('donor_form')}
+            darkMode={darkMode}
+            setDarkMode={setDarkMode}
         />
     );
   }
 
   if (!isCodeVerified) {
-    return <SecretCodeScreen onSuccess={(level) => {
-        setIsCodeVerified(true);
-        setAccessLevel(level);
-    }} />;
+    return <SecretCodeScreen 
+        darkMode={darkMode} 
+        setDarkMode={setDarkMode} 
+        onSuccess={(level) => {
+            setIsCodeVerified(true);
+            setAccessLevel(level);
+        }} 
+    />;
   }
 
   return <Dashboard user={user} telegramConfig={telegramConfig} onSendTelegram={sendTelegramMessage} accessLevel={accessLevel} darkMode={darkMode} setDarkMode={setDarkMode} />;
