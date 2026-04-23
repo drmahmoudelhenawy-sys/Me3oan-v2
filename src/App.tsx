@@ -28,7 +28,12 @@ export default function App() {
     // Skip intro on public URL params (donor form, blood admin)
     const params = new URLSearchParams(window.location.search);
     if (params.get('view')) return false;
-    return !sessionStorage.getItem(INTRO_KEY);
+    try {
+      return !sessionStorage.getItem(INTRO_KEY);
+    } catch (e) {
+      console.warn("SessionStorage access failed:", e);
+      return false; // Default to not showing intro if storage fails
+    }
   });
 
   useEffect(() => {
@@ -45,7 +50,11 @@ export default function App() {
 
   useEffect(() => {
     // 1. Check Local Verification
-    const verifiedStatus = localStorage.getItem("ma3wan_code_verified");
+    let verifiedStatus: string | null = null;
+    try {
+      verifiedStatus = localStorage.getItem("ma3wan_code_verified");
+    } catch (e) { console.warn("LocalStorage access failed:", e); }
+
     if (verifiedStatus === "full" || verifiedStatus === "true") {
       setIsCodeVerified(true);
       setAccessLevel('full');
@@ -57,7 +66,11 @@ export default function App() {
     // 2. Listen for Auth
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       // Re-verify code status (in case AuthScreen set it during login)
-      const verifiedStatus = localStorage.getItem("ma3wan_code_verified");
+      let verifiedStatus: string | null = null;
+      try {
+        verifiedStatus = localStorage.getItem("ma3wan_code_verified");
+      } catch (e) { console.warn("LocalStorage access failed:", e); }
+
       if (verifiedStatus === "full" || verifiedStatus === "true") {
         setIsCodeVerified(true);
         setAccessLevel('full');
@@ -91,7 +104,9 @@ export default function App() {
 
 
   const handleIntroFinish = useCallback(() => {
-    sessionStorage.setItem(INTRO_KEY, "1");
+    try {
+      sessionStorage.setItem(INTRO_KEY, "1");
+    } catch (e) { console.warn("SessionStorage set failed:", e); }
     setShowIntro(false);
   }, []);
 
@@ -129,7 +144,9 @@ export default function App() {
   };
 
   const exitPublicView = async () => {
-      localStorage.removeItem('ma3wan_blood_admin'); 
+      try {
+          localStorage.removeItem('ma3wan_blood_admin'); 
+      } catch (e) { console.warn("LocalStorage remove failed:", e); }
       if (window.location.search.includes('view=')) {
           window.history.replaceState({}, document.title, window.location.pathname);
       }
@@ -215,7 +232,12 @@ export default function App() {
     );
   }
 
-  if (!user || (user.isAnonymous && localStorage.getItem('ma3wan_magic_session') !== 'true')) {
+  let isMagicSession = false;
+  try {
+      isMagicSession = localStorage.getItem('ma3wan_magic_session') === 'true';
+  } catch (e) { console.warn("Magic session check failed", e); }
+
+  if (!user || (user.isAnonymous && !isMagicSession)) {
     return (
         <AuthScreen 
             onGuestIdentity={() => handlePublicAccess('identity')}
