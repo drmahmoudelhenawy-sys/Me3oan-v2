@@ -267,7 +267,7 @@ export default function ChatSystem({ user, userProfile, onClose, departments = [
 
   // ======================= RENDER =======================
   return (
-    <div className="fixed inset-0 z-[200] flex flex-col bg-[#17212B] text-white overflow-hidden shadow-2xl animate-fade-in-up md:inset-auto md:right-6 md:bottom-24 md:left-auto md:top-auto md:w-[420px] md:h-[700px] md:max-h-[calc(100vh-100px)] md:rounded-[1.5rem]" dir="rtl">
+    <div className="flex h-full min-h-[calc(100vh-64px)] flex-col overflow-hidden bg-[#17212B] text-white animate-fade-in-up md:min-h-0" dir="rtl">
 
       {/* ===== HEADER ===== */}
       <div className="bg-[#232E3C] border-b border-white/5 flex items-center justify-between px-4 py-3 shrink-0">

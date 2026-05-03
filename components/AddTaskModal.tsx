@@ -1,397 +1,455 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { X, Calendar, Flag, Clock, Hash, Send, User, CheckCircle2, Image as ImageIcon, Plus, ChevronDown, Sparkles } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { DEPARTMENTS } from '../utils/constants';
+import React, { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  Calendar,
+  ChevronDown,
+  CheckCircle2,
+  Flag,
+  Hash,
+  Image as ImageIcon,
+  Send,
+  User,
+  X,
+} from "lucide-react";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
+import { DEPARTMENTS } from "../utils/constants";
 
 interface AddTaskModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onAdd: (task: any) => void;
-    activeDeptId: string;
-    user: any;
-    initialData?: any;
-    existingCategories?: string[];
-    projects?: any[];
+  isOpen: boolean;
+  onClose: () => void;
+  onAdd: (task: any) => void;
+  activeDeptId: string;
+  user: any;
+  initialData?: any;
+  existingCategories?: string[];
+  projects?: any[];
 }
 
-// Priority config
-const PRIORITY_META: Record<string, { label: string; color: string; bg: string; grad: string }> = {
-    p1: { label: 'عاجل جداً', color: 'text-red-600',    bg: 'bg-red-50',    grad: 'from-red-500 to-rose-600' },
-    p2: { label: 'عاجل',      color: 'text-orange-600', bg: 'bg-orange-50', grad: 'from-orange-500 to-amber-600' },
-    p3: { label: 'متوسط',     color: 'text-blue-600',   bg: 'bg-blue-50',   grad: 'from-blue-500 to-indigo-600' },
-    p4: { label: 'عادي',      color: 'text-gray-500',   bg: 'bg-gray-100',  grad: 'from-gray-400 to-gray-500' },
-};
+const PRIORITIES = [
+  { id: "p4", label: "عادي", className: "border-gray-200 bg-gray-50 text-gray-600" },
+  { id: "p3", label: "متوسط", className: "border-blue-200 bg-blue-50 text-blue-700" },
+  { id: "p2", label: "هام", className: "border-orange-200 bg-orange-50 text-orange-700" },
+  { id: "p1", label: "عاجل جدًا", className: "border-red-200 bg-red-50 text-red-700" },
+];
 
-export default function AddTaskModal({ isOpen, onClose, onAdd, activeDeptId, user, initialData, existingCategories = [], projects = [] }: AddTaskModalProps) {
-    const [title, setTitle] = useState(initialData?.title || "");
-    const [details, setDetails] = useState(initialData?.details || "");
-    const [deadline, setDeadline] = useState(initialData?.deadline || "");
-    const [executionDate, setExecutionDate] = useState(initialData?.executionDate || "");
-    const [priority, setPriority] = useState(initialData?.priority || "p4");
-    const [targetDept, setTargetDept] = useState(initialData?.targetDept || "");
-    const [isForSelf, setIsForSelf] = useState(true);
-    const [isAlsoForSelf, setIsAlsoForSelf] = useState(false);
-    const [category, setCategory] = useState(initialData?.category || "");
-    const [performerName, setPerformerName] = useState(initialData?.performerName || "");
-    const [eduBatchNumber, setEduBatchNumber] = useState("");
-    const [eduCreateCover, setEduCreateCover] = useState(false);
-    const [projectId, setProjectId] = useState(initialData?.projectId || "");
+const getDefaultState = (initialData?: any) => ({
+  title: initialData?.title || "",
+  details: initialData?.details || "",
+  deadline: initialData?.deadline || "",
+  executionDate: initialData?.executionDate || "",
+  priority: initialData?.priority || "p4",
+  targetDept: initialData?.targetDept || "",
+  isForSelf: !initialData?.targetDept,
+  isAlsoForSelf: false,
+  category: initialData?.category || "",
+  performerName: initialData?.performerName || "",
+  eduBatchNumber: initialData?.eduBatchNumber || "",
+  eduCreateCover: Boolean(initialData?.eduCreateCover),
+  projectId: initialData?.projectId || "",
+});
 
-    // Logo Selection State
-    const [brandLogos, setBrandLogos] = useState<{name: string, url: string}[]>([]);
-    const [selectedLogos, setSelectedLogos] = useState<string[]>([]);
-    const [showLogoSection, setShowLogoSection] = useState(false);
+export default function AddTaskModal({
+  isOpen,
+  onClose,
+  onAdd,
+  activeDeptId,
+  initialData,
+  existingCategories = [],
+  projects = [],
+}: AddTaskModalProps) {
+  const [form, setForm] = useState(() => getDefaultState(initialData));
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [brandLogos, setBrandLogos] = useState<{ name: string; url: string }[]>([]);
+  const [selectedLogos, setSelectedLogos] = useState<string[]>([]);
+  const titleRef = useRef<HTMLInputElement>(null);
 
-    // UI States
-    const [showPriorityMenu, setShowPriorityMenu] = useState(false);
-    const [showDeptMenu, setShowDeptMenu] = useState(false);
+  const activeDept = DEPARTMENTS.find((dept) => dept.id === activeDeptId);
+  const targetDept = DEPARTMENTS.find((dept) => dept.id === form.targetDept);
+  const selectedPriority = PRIORITIES.find((priority) => priority.id === form.priority) || PRIORITIES[0];
+  const isArtContext = activeDeptId === "art" || form.targetDept === "art";
+  const showLogoPicker = isArtContext && brandLogos.length > 0;
 
-    const priorityRef = useRef<HTMLDivElement>(null);
-    const deptRef = useRef<HTMLDivElement>(null);
-    const titleRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!isOpen) return;
 
-    // Fetch Logos
-    useEffect(() => {
-        if (isOpen) {
-            const fetchLogos = async () => {
-                try {
-                    const docRef = doc(db, "app_settings", "brand_identity");
-                    const docSnap = await getDoc(docRef);
-                    if (docSnap.exists()) {
-                        const data = docSnap.data();
-                        setBrandLogos(data.additionalLogos || []);
-                    }
-                } catch (e) { console.error("Error fetching logos", e); }
-            };
-            fetchLogos();
-            setTimeout(() => titleRef.current?.focus(), 100);
+    const nextState = getDefaultState(initialData);
+    if (!initialData) {
+      const savedPerformer = localStorage.getItem("ma3wan_last_performer");
+      const savedCategory = localStorage.getItem("ma3wan_last_category");
+      const savedTargetDept = localStorage.getItem("ma3wan_last_targetDept");
+
+      if (savedPerformer) nextState.performerName = savedPerformer;
+      if (savedCategory) nextState.category = savedCategory;
+      if (savedTargetDept && savedTargetDept !== activeDeptId) {
+        nextState.targetDept = savedTargetDept;
+        nextState.isForSelf = false;
+      }
+    }
+
+    setForm(nextState);
+    setSelectedLogos([]);
+    setShowAdvanced(false);
+    setTimeout(() => titleRef.current?.focus(), 100);
+  }, [activeDeptId, initialData, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const fetchLogos = async () => {
+      try {
+        const docSnap = await getDoc(doc(db, "app_settings", "brand_identity"));
+        if (docSnap.exists()) {
+          setBrandLogos(docSnap.data().additionalLogos || []);
         }
-    }, [isOpen]);
-
-    // Load saved data when modal opens
-    useEffect(() => {
-        if (isOpen) {
-            if (initialData) {
-                if (initialData.deadline)     setDeadline(initialData.deadline);
-                if (initialData.title)        setTitle(initialData.title);
-                if (initialData.details)      setDetails(initialData.details);
-                if (initialData.priority)     setPriority(initialData.priority);
-                if (initialData.category)     setCategory(initialData.category);
-                if (initialData.performerName) setPerformerName(initialData.performerName);
-                if (initialData.targetDept)   { setTargetDept(initialData.targetDept); setIsForSelf(false); }
-            } else {
-                const savedPerformer   = localStorage.getItem("ma3wan_last_performer");
-                const savedCategory    = localStorage.getItem("ma3wan_last_category");
-                const savedTargetDept  = localStorage.getItem("ma3wan_last_targetDept");
-                if (savedPerformer)  setPerformerName(savedPerformer);
-                if (savedCategory)   setCategory(savedCategory);
-                if (savedTargetDept && savedTargetDept !== activeDeptId) { setTargetDept(savedTargetDept); setIsForSelf(false); }
-            }
-        }
-    }, [isOpen, initialData, activeDeptId]);
-
-    useEffect(() => {
-        const isArtContext    = activeDeptId === 'art' || targetDept === 'art';
-        const isDesignCategory = category.includes('تصميم') || category.includes('design') || category.includes('جرافيك');
-        setShowLogoSection(isArtContext || isDesignCategory);
-    }, [activeDeptId, targetDept, category]);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (priorityRef.current && !priorityRef.current.contains(event.target as Node)) setShowPriorityMenu(false);
-            if (deptRef.current && !deptRef.current.contains(event.target as Node)) setShowDeptMenu(false);
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    const toggleLogo = (logoName: string) => {
-        setSelectedLogos(prev => prev.includes(logoName) ? prev.filter(l => l !== logoName) : [...prev, logoName]);
+      } catch (error) {
+        console.error("Error fetching brand logos", error);
+      }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!title.trim()) return;
+    fetchLogos();
+  }, [isOpen]);
 
-        if (performerName) localStorage.setItem("ma3wan_last_performer", performerName);
-        if (category)      localStorage.setItem("ma3wan_last_category", category);
-        if (!isForSelf && targetDept) localStorage.setItem("ma3wan_last_targetDept", targetDept);
+  const updateForm = (updates: Partial<typeof form>) => {
+    setForm((current) => ({ ...current, ...updates }));
+  };
 
-        onAdd({ title, details, deadline, executionDate, priority, targetDept: isForSelf ? activeDeptId : targetDept, isForSelf, isAlsoForSelf: !isForSelf && isAlsoForSelf, category, performerName, eduBatchNumber, eduCreateCover, selectedLogos, projectId });
-        
-        // Reset
-        setTitle(""); setDetails(""); setDeadline(""); setExecutionDate("");
-        setPriority("p4"); setTargetDept(""); setIsForSelf(true); setIsAlsoForSelf(false);
-        setCategory(""); setPerformerName(""); setEduBatchNumber(""); setEduCreateCover(false); setSelectedLogos([]);
-        onClose();
-    };
-
-    const activeDept = DEPARTMENTS.find(d => d.id === activeDeptId);
-    const pMeta = PRIORITY_META[priority] || PRIORITY_META.p4;
-    const targetDeptName = DEPARTMENTS.find(d => d.id === targetDept)?.nameAr || 'توجيه';
-
-    return (
-        <AnimatePresence>
-            {isOpen && (
-                <div className="fixed inset-0 z-[60] flex items-end md:items-center justify-center bg-black/50 backdrop-blur-sm" onClick={onClose}>
-                    <motion.div
-                        initial={{ opacity: 0, y: "100%" }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: "100%" }}
-                        transition={{ type: "spring", damping: 25, stiffness: 300 }}
-                        className="w-full md:max-w-lg rounded-t-3xl md:rounded-3xl shadow-2xl h-[85vh] md:h-auto flex flex-col overflow-hidden"
-                        onClick={e => e.stopPropagation()}
-                    >
-                        <form onSubmit={handleSubmit} className="flex flex-col h-full bg-white dark:bg-gray-900">
-
-                            {/* ── Gradient Header ── */}
-                            <div className={`relative bg-gradient-to-br ${pMeta.grad} p-5 pb-12 overflow-hidden shrink-0 transition-all duration-500`}>
-                                <div className="absolute -top-8 -left-8 w-32 h-32 bg-white/10 rounded-full blur-2xl pointer-events-none"/>
-                                <div className="absolute -bottom-4 -right-4 w-24 h-24 bg-white/10 rounded-full blur-xl pointer-events-none"/>
-                                
-                                 {/* Mobile drag handle */}
-                                <div className="w-10 h-1 bg-white/40 rounded-full mx-auto mb-4 md:hidden"/>
-
-                                <div className="relative z-10 flex items-start justify-between">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-1 opacity-80">
-                                            {activeDept && <activeDept.icon size={14} className="text-white"/>}
-                                            <span className="text-white text-[11px] font-bold">
-                                                {activeDept?.nameAr || 'مهمة جديدة'}
-                                            </span>
-                                        </div>
-                                        <p className="text-white font-black text-lg opacity-90">إضافة مهمة</p>
-                                    </div>
-                                    <button type="button" onClick={onClose} className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-full flex items-center justify-center text-white transition shrink-0">
-                                        <X size={16}/>
-                                    </button>
-                                </div>
-                            </div>
-
-                            {/* ── Body Card (slides over header) ── */}
-                            <div className="-mt-7 mx-4 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 flex-1 overflow-y-auto custom-scrollbar mb-4">
-                                <div className="p-5 space-y-4">
-
-                                    {/* Title Input */}
-                                    <input
-                                        ref={titleRef}
-                                        type="text"
-                                        placeholder="اسم المهمة..."
-                                        className="w-full text-xl font-black bg-transparent border-none focus:ring-0 outline-none p-0 placeholder-gray-300 dark:placeholder-gray-600 text-gray-800 dark:text-white"
-                                        value={title}
-                                        onChange={e => setTitle(e.target.value)}
-                                    />
-
-                                    {/* Description */}
-                                    <textarea
-                                        placeholder="وصف تفصيلي للمهمة (اختياري)..."
-                                        className="w-full text-sm bg-gray-50 dark:bg-gray-900/50 border border-gray-100 dark:border-gray-700 rounded-xl p-3 resize-none h-20 outline-none focus:ring-2 focus:ring-indigo-500 placeholder-gray-300 dark:placeholder-gray-600 text-gray-600 dark:text-gray-300 transition"
-                                        value={details}
-                                        onChange={e => setDetails(e.target.value)}
-                                    />
-
-                                    {/* ── Quick Controls Row ── */}
-                                    <div className="flex flex-wrap gap-2">
-                                        {/* Deadline */}
-                                        <label className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer transition ${deadline ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-600' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-100'}`}>
-                                            <Calendar size={13}/>
-                                            <span>{deadline || 'الموعد النهائي'}</span>
-                                            <input type="date" className="sr-only" value={deadline} onChange={e => setDeadline(e.target.value)}/>
-                                        </label>
-
-                                        {/* Execution Date */}
-                                        <label className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold cursor-pointer transition ${executionDate ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-100'}`}>
-                                            <Clock size={13}/>
-                                            <span>{executionDate || 'تاريخ التنفيذ'}</span>
-                                            <input type="date" className="sr-only" value={executionDate} onChange={e => setExecutionDate(e.target.value)}/>
-                                        </label>
-
-                                        {/* Priority Picker */}
-                                        <div className="relative" ref={priorityRef}>
-                                            <button type="button" onClick={() => setShowPriorityMenu(!showPriorityMenu)}
-                                                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition ${priority !== 'p4' ? `${pMeta.bg} dark:bg-opacity-20 border-transparent ${pMeta.color}` : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-100'}`}
-                                            >
-                                                <Flag size={13}/>
-                                                {pMeta.label}
-                                                <ChevronDown size={11} className="opacity-60"/>
-                                            </button>
-                                            <AnimatePresence>
-                                                {showPriorityMenu && (
-                                                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-                                                        className="absolute top-full right-0 mt-1 w-36 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden z-30 py-1">
-                                                        {Object.entries(PRIORITY_META).map(([key, meta]) => (
-                                                            <button key={key} type="button" onClick={() => { setPriority(key); setShowPriorityMenu(false); }}
-                                                                className={`w-full text-right px-3 py-2 text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 ${meta.color}`}>
-                                                                <Flag size={11}/> {meta.label}
-                                                            </button>
-                                                        ))}
-                                                    </motion.div>
-                                                )}
-                                            </AnimatePresence>
-                                        </div>
-
-                                        {/* Target Department */}
-                                        <div className="relative" ref={deptRef}>
-                                            <button type="button" onClick={() => setShowDeptMenu(!showDeptMenu)}
-                                                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition ${!isForSelf ? 'bg-indigo-50 dark:bg-indigo-900/20 border-indigo-200 dark:border-indigo-800 text-indigo-600' : 'bg-gray-50 dark:bg-gray-900/50 border-gray-200 dark:border-gray-700 text-gray-500 hover:bg-gray-100'}`}
-                                            >
-                                                {isForSelf ? <User size={13}/> : <Send size={13}/>}
-                                                {isForSelf ? 'لنفسي' : targetDeptName}
-                                                <ChevronDown size={11} className="opacity-60"/>
-                                            </button>
-                                            <AnimatePresence>
-                                                {showDeptMenu && (
-                                                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 8 }}
-                                                        className="absolute top-full right-0 mt-1 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 overflow-hidden z-30 max-h-52 overflow-y-auto custom-scrollbar py-1">
-                                                        <button type="button" onClick={() => { setIsForSelf(true); setTargetDept(""); setShowDeptMenu(false); }}
-                                                            className="w-full text-right px-3 py-2 text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
-                                                            <User size={12}/> لنفسي
-                                                        </button>
-                                                        {DEPARTMENTS.filter(d => d.id !== activeDeptId).map(dept => (
-                                                            <button key={dept.id} type="button"
-                                                                onClick={() => { setIsForSelf(false); setTargetDept(dept.id); setShowDeptMenu(false); }}
-                                                                className="w-full text-right px-3 py-2 text-xs font-bold hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 text-gray-700 dark:text-gray-300">
-                                                                <dept.icon size={12} className={dept.primaryColor}/>
-                                                                {dept.nameAr || dept.name}
-                                                            </button>
-                                                        ))}
-                                                    </motion.div>
-                                                )}
-                                            </AnimatePresence>
-                                        </div>
-
-                                        {/* Also for self checkbox */}
-                                        {!isForSelf && (
-                                            <label className="flex items-center gap-1.5 cursor-pointer px-3 py-2 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800 text-[10px] font-bold text-indigo-700 dark:text-indigo-300">
-                                                <input type="checkbox" checked={isAlsoForSelf} onChange={e => setIsAlsoForSelf(e.target.checked)} className="rounded text-indigo-600 w-3.5 h-3.5"/>
-                                                أضف لي أيضاً؟
-                                            </label>
-                                        )}
-                                    </div>
-
-                                    {/* ── Project Selection ── */}
-                                    {projects && projects.length > 0 && (
-                                        <div className="bg-indigo-50/30 dark:bg-indigo-900/10 p-3 rounded-2xl border border-indigo-100/50 dark:border-indigo-800/30">
-                                            <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest px-1 mb-1.5 block">المشروع المرتبط</label>
-                                            <select 
-                                                value={projectId}
-                                                onChange={e => setProjectId(e.target.value)}
-                                                className="w-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl px-3 py-2 text-xs font-bold outline-none focus:ring-2 focus:ring-indigo-500 text-gray-700 dark:text-gray-300 transition"
-                                            >
-                                                <option value="">بدون مشروع (عام)</option>
-                                                {projects.map((p: any) => (
-                                                    <option key={p.id} value={p.id}>{p.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    )}
-
-                                    {/* ── Category + Performer ── */}
-                                    <div className="flex gap-2">
-                                        <div className="flex-1 relative">
-                                            <Hash size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none"/>
-                                            <input
-                                                type="text"
-                                                list="categories-list"
-                                                placeholder="القسم الداخلي / الفئة"
-                                                className="w-full pl-3 pr-8 py-2.5 text-xs font-bold bg-gray-50 dark:bg-gray-900/50 rounded-xl border border-gray-200 dark:border-gray-700 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none transition"
-                                                value={category}
-                                                onChange={e => setCategory(e.target.value)}
-                                            />
-                                            <datalist id="categories-list">
-                                                {existingCategories.map((cat, idx) => <option key={idx} value={cat}/>)}
-                                            </datalist>
-                                        </div>
-                                        {(activeDeptId === 'art' || targetDept === 'art') && (
-                                            <input
-                                                type="text"
-                                                placeholder="اسم المصمم"
-                                                className="w-36 px-3 py-2.5 text-xs font-bold bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-xl border border-purple-200 dark:border-purple-800 placeholder-purple-300 focus:ring-2 focus:ring-purple-500 outline-none transition"
-                                                value={performerName}
-                                                onChange={e => setPerformerName(e.target.value)}
-                                            />
-                                        )}
-                                    </div>
-
-                                    {/* ── Logo Picker ── */}
-                                    {showLogoSection && brandLogos.length > 0 && (
-                                        <div className="p-4 bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800">
-                                            <h4 className="text-xs font-black text-indigo-700 dark:text-indigo-300 mb-3 flex items-center gap-2">
-                                                <ImageIcon size={13}/> اختيار اللوجوهات المطلوبة
-                                                {selectedLogos.length > 0 && (
-                                                    <span className="bg-indigo-600 text-white text-[9px] px-1.5 py-0.5 rounded-full">{selectedLogos.length}</span>
-                                                )}
-                                            </h4>
-                                            <div className="grid grid-cols-4 gap-2">
-                                                {brandLogos.map((logo, idx) => (
-                                                    <button key={idx} type="button" onClick={() => toggleLogo(logo.name)}
-                                                        className={`relative aspect-square rounded-xl border-2 overflow-hidden transition-all ${selectedLogos.includes(logo.name) ? 'border-indigo-500 ring-2 ring-indigo-200 shadow-md' : 'border-gray-200 dark:border-gray-600 opacity-60 hover:opacity-90 hover:border-gray-300'}`}>
-                                                        <img src={logo.url} alt={logo.name} className="w-full h-full object-contain p-1"/>
-                                                        {selectedLogos.includes(logo.name) && (
-                                                            <div className="absolute top-1 right-1 bg-indigo-500 text-white rounded-full p-0.5 shadow">
-                                                                <CheckCircle2 size={9}/>
-                                                            </div>
-                                                        )}
-                                                        <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[8px] py-0.5 text-center truncate px-1">
-                                                            {logo.name}
-                                                        </div>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* ── Educational Fields ── */}
-                                    {activeDeptId === 'educational' && (
-                                        <div className="p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800 flex items-center gap-3">
-                                            <input
-                                                type="text"
-                                                placeholder="رقم الدفعة"
-                                                className="flex-1 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg text-xs border-none focus:ring-1 focus:ring-indigo-500 placeholder-indigo-300 text-indigo-700 dark:text-indigo-300 outline-none"
-                                                value={eduBatchNumber}
-                                                onChange={e => setEduBatchNumber(e.target.value)}
-                                            />
-                                            <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
-                                                <input type="checkbox" checked={eduCreateCover} onChange={e => setEduCreateCover(e.target.checked)} className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"/>
-                                                <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300">إنشاء غلاف</span>
-                                            </label>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* ── Footer ── */}
-                            <div className="px-4 pb-6 shrink-0 flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-1.5 text-[10px] text-gray-400 font-bold">
-                                    <Hash size={11}/>
-                                    <span>{activeDeptId === 'inbox' ? 'الوارد' : (activeDept?.nameAr || 'عام')}</span>
-                                    {category && (
-                                        <>
-                                            <span className="opacity-40">•</span>
-                                            <span className="text-indigo-500">{category}</span>
-                                        </>
-                                    )}
-                                </div>
-                                <div className="flex gap-2">
-                                    <button type="button" onClick={onClose} className="px-4 py-2.5 text-xs font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-xl transition">
-                                        إلغاء
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={!title.trim()}
-                                        className={`px-6 py-2.5 text-xs font-black text-white bg-gradient-to-r ${pMeta.grad} rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition shadow-lg hover:opacity-90 hover:scale-105 active:scale-95 flex items-center gap-2`}
-                                    >
-                                        <Sparkles size={13}/>
-                                        إضافة مهمة
-                                    </button>
-                                </div>
-                            </div>
-                        </form>
-                    </motion.div>
-                </div>
-            )}
-        </AnimatePresence>
+  const toggleLogo = (logoName: string) => {
+    setSelectedLogos((current) =>
+      current.includes(logoName) ? current.filter((name) => name !== logoName) : [...current, logoName]
     );
+  };
+
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.title.trim()) return;
+
+    if (form.performerName) localStorage.setItem("ma3wan_last_performer", form.performerName);
+    if (form.category) localStorage.setItem("ma3wan_last_category", form.category);
+    if (!form.isForSelf && form.targetDept) localStorage.setItem("ma3wan_last_targetDept", form.targetDept);
+
+    onAdd({
+      ...form,
+      title: form.title.trim(),
+      details: form.details.trim(),
+      targetDept: form.isForSelf ? activeDeptId : form.targetDept,
+      selectedLogos,
+    });
+
+    onClose();
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-end justify-center bg-black/50 p-0 backdrop-blur-sm md:items-center md:p-4"
+          onClick={onClose}
+          dir="rtl"
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 40 }}
+            transition={{ type: "spring", damping: 24, stiffness: 280 }}
+            className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-900 md:rounded-3xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+              <header className="border-b border-gray-100 px-5 py-4 dark:border-gray-800">
+                <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-gray-200 md:hidden" />
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="mb-1 text-xs font-black text-indigo-600">
+                      {activeDept?.nameAr || "مهمة جديدة"}
+                    </p>
+                    <h2 className="text-xl font-black text-gray-900 dark:text-white">إضافة مهمة</h2>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </header>
+
+              <main className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                <div className="space-y-5">
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black text-gray-500">عنوان المهمة</span>
+                    <input
+                      ref={titleRef}
+                      value={form.title}
+                      onChange={(event) => updateForm({ title: event.target.value })}
+                      className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-base font-black text-gray-900 outline-none transition placeholder:text-gray-300 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                      placeholder="مثال: تجهيز تصميم إعلان الحملة"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-black text-gray-500">وصف مختصر</span>
+                    <textarea
+                      value={form.details}
+                      onChange={(event) => updateForm({ details: event.target.value })}
+                      rows={3}
+                      className="w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm font-bold leading-relaxed text-gray-700 outline-none transition placeholder:text-gray-300 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                      placeholder="اكتب المطلوب بوضوح..."
+                    />
+                  </label>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <span className="mb-2 block text-xs font-black text-gray-500">تخص مين؟</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => updateForm({ isForSelf: true, targetDept: "" })}
+                          className={`flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-xs font-black transition ${
+                            form.isForSelf
+                              ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                              : "border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-800"
+                          }`}
+                        >
+                          <User size={15} />
+                          نفس اللجنة
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateForm({ isForSelf: false, targetDept: form.targetDept || "" })}
+                          className={`flex items-center justify-center gap-2 rounded-2xl border px-3 py-3 text-xs font-black transition ${
+                            !form.isForSelf
+                              ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                              : "border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-800"
+                          }`}
+                        >
+                          <Send size={15} />
+                          لجنة أخرى
+                        </button>
+                      </div>
+                    </div>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-black text-gray-500">الموعد النهائي</span>
+                      <div className="relative">
+                        <Calendar className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+                        <input
+                          type="date"
+                          value={form.deadline}
+                          onChange={(event) => updateForm({ deadline: event.target.value })}
+                          className="w-full rounded-2xl border border-gray-200 bg-white py-3 pl-4 pr-11 text-sm font-bold text-gray-700 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                        />
+                      </div>
+                    </label>
+                  </div>
+
+                  {!form.isForSelf && (
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-black text-gray-500">اللجنة المستلمة</span>
+                      <select
+                        value={form.targetDept}
+                        onChange={(event) => updateForm({ targetDept: event.target.value })}
+                        required={!form.isForSelf}
+                        className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-black text-gray-700 outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                      >
+                        <option value="">اختر اللجنة</option>
+                        {DEPARTMENTS.filter((dept) => dept.id !== activeDeptId).map((dept) => (
+                          <option key={dept.id} value={dept.id}>
+                            {dept.nameAr || dept.name}
+                          </option>
+                        ))}
+                      </select>
+                      {targetDept && (
+                        <p className="mt-2 text-xs font-bold text-indigo-500">سيتم إرسالها إلى {targetDept.nameAr || targetDept.name}</p>
+                      )}
+                    </label>
+                  )}
+
+                  <div>
+                    <span className="mb-2 block text-xs font-black text-gray-500">الأولوية</span>
+                    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+                      {PRIORITIES.map((priority) => (
+                        <button
+                          key={priority.id}
+                          type="button"
+                          onClick={() => updateForm({ priority: priority.id })}
+                          className={`flex items-center justify-center gap-2 rounded-2xl border px-3 py-2.5 text-xs font-black transition ${
+                            form.priority === priority.id ? priority.className : "border-gray-200 bg-white text-gray-500 dark:border-gray-700 dark:bg-gray-800"
+                          }`}
+                        >
+                          <Flag size={13} />
+                          {priority.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAdvanced((value) => !value)}
+                    className="flex w-full items-center justify-between rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-3 text-sm font-black text-gray-600 transition hover:border-indigo-300 hover:bg-indigo-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  >
+                    خيارات متقدمة
+                    <ChevronDown size={17} className={`transition ${showAdvanced ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {showAdvanced && (
+                    <div className="space-y-4 rounded-3xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-800 dark:bg-gray-900/60">
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-black text-gray-500">المسؤول عن التنفيذ</span>
+                          <input
+                            value={form.performerName}
+                            onChange={(event) => updateForm({ performerName: event.target.value })}
+                            className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                            placeholder="اسم الشخص"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-black text-gray-500">تصنيف داخلي</span>
+                          <div className="relative">
+                            <Hash className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={15} />
+                            <input
+                              list="task-categories-list"
+                              value={form.category}
+                              onChange={(event) => updateForm({ category: event.target.value })}
+                              className="w-full rounded-2xl border border-gray-200 bg-white py-3 pl-4 pr-11 text-sm font-bold outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                              placeholder="مثال: تصميمات"
+                            />
+                            <datalist id="task-categories-list">
+                              {existingCategories.map((category) => (
+                                <option key={category} value={category} />
+                              ))}
+                            </datalist>
+                          </div>
+                        </label>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-black text-gray-500">تاريخ التنفيذ</span>
+                          <input
+                            type="date"
+                            value={form.executionDate}
+                            onChange={(event) => updateForm({ executionDate: event.target.value })}
+                            className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                          />
+                        </label>
+
+                        {projects.length > 0 && (
+                          <label className="block">
+                            <span className="mb-2 block text-xs font-black text-gray-500">المشروع المرتبط</span>
+                            <select
+                              value={form.projectId}
+                              onChange={(event) => updateForm({ projectId: event.target.value })}
+                              className="w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100 dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                            >
+                              <option value="">بدون مشروع</option>
+                              {projects.map((project: any) => (
+                                <option key={project.id} value={project.id}>
+                                  {project.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        )}
+                      </div>
+
+                      {activeDeptId === "educational" && (
+                        <div className="grid gap-3 md:grid-cols-2">
+                          <input
+                            value={form.eduBatchNumber}
+                            onChange={(event) => updateForm({ eduBatchNumber: event.target.value })}
+                            className="rounded-2xl border border-indigo-100 bg-white px-4 py-3 text-sm font-bold outline-none focus:border-indigo-400 focus:ring-4 focus:ring-indigo-100"
+                            placeholder="رقم الدفعة"
+                          />
+                          <label className="flex cursor-pointer items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-indigo-700">
+                            <input
+                              type="checkbox"
+                              checked={form.eduCreateCover}
+                              onChange={(event) => updateForm({ eduCreateCover: event.target.checked })}
+                              className="h-4 w-4 rounded text-indigo-600"
+                            />
+                            إنشاء غلاف
+                          </label>
+                        </div>
+                      )}
+
+                      {!form.isForSelf && (
+                        <label className="flex cursor-pointer items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm font-black text-indigo-700 dark:bg-gray-800">
+                          <input
+                            type="checkbox"
+                            checked={form.isAlsoForSelf}
+                            onChange={(event) => updateForm({ isAlsoForSelf: event.target.checked })}
+                            className="h-4 w-4 rounded text-indigo-600"
+                          />
+                          أضف نسخة في لجنة المنشأ أيضًا
+                        </label>
+                      )}
+
+                      {showLogoPicker && (
+                        <div>
+                          <div className="mb-3 flex items-center gap-2 text-xs font-black text-gray-500">
+                            <ImageIcon size={15} />
+                            اللوجوهات المطلوبة
+                          </div>
+                          <div className="grid grid-cols-4 gap-2">
+                            {brandLogos.map((logo) => (
+                              <button
+                                key={logo.name}
+                                type="button"
+                                onClick={() => toggleLogo(logo.name)}
+                                className={`relative aspect-square overflow-hidden rounded-2xl border-2 bg-white p-2 transition ${
+                                  selectedLogos.includes(logo.name) ? "border-indigo-500 ring-4 ring-indigo-100" : "border-gray-200 opacity-70 hover:opacity-100"
+                                }`}
+                              >
+                                <img src={logo.url} alt={logo.name} className="h-full w-full object-contain" />
+                                {selectedLogos.includes(logo.name) && (
+                                  <span className="absolute right-1 top-1 rounded-full bg-indigo-600 p-1 text-white">
+                                    <CheckCircle2 size={11} />
+                                  </span>
+                                )}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </main>
+
+              <footer className="border-t border-gray-100 px-5 py-4 dark:border-gray-800">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="hidden text-xs font-bold text-gray-400 md:block">
+                    {form.isForSelf ? "ستضاف لنفس اللجنة" : targetDept ? `ستحول إلى ${targetDept.nameAr || targetDept.name}` : "اختر اللجنة المستلمة"}
+                  </div>
+                  <div className="mr-auto flex w-full gap-2 md:w-auto">
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="flex-1 rounded-2xl bg-gray-100 px-5 py-3 text-sm font-black text-gray-600 transition hover:bg-gray-200 md:flex-none dark:bg-gray-800 dark:text-gray-300"
+                    >
+                      إلغاء
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!form.title.trim() || (!form.isForSelf && !form.targetDept)}
+                      className={`flex-1 rounded-2xl px-5 py-3 text-sm font-black text-white shadow-lg transition md:flex-none ${
+                        selectedPriority.id === "p1" ? "bg-red-600 shadow-red-600/20" : "bg-indigo-600 shadow-indigo-600/20"
+                      } disabled:cursor-not-allowed disabled:opacity-40`}
+                    >
+                      إضافة المهمة
+                    </button>
+                  </div>
+                </div>
+              </footer>
+            </form>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
 }

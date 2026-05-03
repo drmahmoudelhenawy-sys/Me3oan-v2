@@ -1,21 +1,6 @@
-@import "tailwindcss";
-@custom-variant dark (&:where(.dark, .dark *));
-
-
-@theme {
-  --color-gray-750: #2d3748;
-  --color-gray-850: #1a202c;
-  --color-gray-950: #0d1117;
-  
-  --color-card-yellow: #FCD34D;
-  --color-card-pink: #F472B6;
-  --color-card-purple: #A78BFA;
-  --color-card-blue: #60A5FA;
-  --color-card-green: #34D399;
-  --color-card-orange: #FB923C;
-
-  --font-sans: 'Cairo', system-ui, sans-serif;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* Custom Scrollbar */
 .custom-scrollbar::-webkit-scrollbar {
@@ -37,6 +22,10 @@
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+body {
+  font-family: 'Cairo', sans-serif;
 }
 
 @keyframes fade-in-up {

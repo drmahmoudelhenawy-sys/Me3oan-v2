@@ -28,12 +28,7 @@ export default function App() {
     // Skip intro on public URL params (donor form, blood admin)
     const params = new URLSearchParams(window.location.search);
     if (params.get('view')) return false;
-    try {
-      return !sessionStorage.getItem(INTRO_KEY);
-    } catch (e) {
-      console.warn("SessionStorage access failed:", e);
-      return false; // Default to not showing intro if storage fails
-    }
+    return !sessionStorage.getItem(INTRO_KEY);
   });
 
   useEffect(() => {
@@ -50,11 +45,7 @@ export default function App() {
 
   useEffect(() => {
     // 1. Check Local Verification
-    let verifiedStatus: string | null = null;
-    try {
-      verifiedStatus = localStorage.getItem("ma3wan_code_verified");
-    } catch (e) { console.warn("LocalStorage access failed:", e); }
-
+    const verifiedStatus = localStorage.getItem("ma3wan_code_verified");
     if (verifiedStatus === "full" || verifiedStatus === "true") {
       setIsCodeVerified(true);
       setAccessLevel('full');
@@ -66,11 +57,7 @@ export default function App() {
     // 2. Listen for Auth
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       // Re-verify code status (in case AuthScreen set it during login)
-      let verifiedStatus: string | null = null;
-      try {
-        verifiedStatus = localStorage.getItem("ma3wan_code_verified");
-      } catch (e) { console.warn("LocalStorage access failed:", e); }
-
+      const verifiedStatus = localStorage.getItem("ma3wan_code_verified");
       if (verifiedStatus === "full" || verifiedStatus === "true") {
         setIsCodeVerified(true);
         setAccessLevel('full');
@@ -104,16 +91,18 @@ export default function App() {
 
 
   const handleIntroFinish = useCallback(() => {
-    try {
-      sessionStorage.setItem(INTRO_KEY, "1");
-    } catch (e) { console.warn("SessionStorage set failed:", e); }
+    sessionStorage.setItem(INTRO_KEY, "1");
     setShowIntro(false);
   }, []);
 
   const sendTelegramMessage = async (targetChatId: string, text: string, botToken?: string) => {
       if (!text || !targetChatId) return;
-      const DEFAULT_TOKEN = "8048288694:AAH92QC0rHgkaYHjQxQyWLU3PRrhTiGmLZA";
-      const tokenToUse = botToken || telegramConfig?.defaultBotToken || DEFAULT_TOKEN;
+      const envBotToken = (import.meta as any).env?.VITE_TELEGRAM_BOT_TOKEN || "";
+      const tokenToUse = botToken || telegramConfig?.defaultBotToken || envBotToken;
+      if (!tokenToUse) {
+        console.warn("Telegram bot token is not configured.");
+        return;
+      }
       
       try {
         await fetch(`https://api.telegram.org/bot${tokenToUse}/sendMessage`, {
@@ -144,9 +133,7 @@ export default function App() {
   };
 
   const exitPublicView = async () => {
-      try {
-          localStorage.removeItem('ma3wan_blood_admin'); 
-      } catch (e) { console.warn("LocalStorage remove failed:", e); }
+      localStorage.removeItem('ma3wan_blood_admin'); 
       if (window.location.search.includes('view=')) {
           window.history.replaceState({}, document.title, window.location.pathname);
       }
@@ -232,33 +219,22 @@ export default function App() {
     );
   }
 
-  let isMagicSession = false;
-  try {
-      isMagicSession = localStorage.getItem('ma3wan_magic_session') === 'true';
-  } catch (e) { console.warn("Magic session check failed", e); }
-
-  if (!user || (user.isAnonymous && !isMagicSession)) {
+  if (!user || (user.isAnonymous && localStorage.getItem('ma3wan_magic_session') !== 'true')) {
     return (
         <AuthScreen 
             onGuestIdentity={() => handlePublicAccess('identity')}
             onGuestOrg={() => handlePublicAccess('org')}
             onGuestBlood={() => handlePublicAccess('blood')}
             onGuestDonorForm={() => handlePublicAccess('donor_form')}
-            darkMode={darkMode}
-            setDarkMode={setDarkMode}
         />
     );
   }
 
   if (!isCodeVerified) {
-    return <SecretCodeScreen 
-        darkMode={darkMode} 
-        setDarkMode={setDarkMode} 
-        onSuccess={(level) => {
-            setIsCodeVerified(true);
-            setAccessLevel(level);
-        }} 
-    />;
+    return <SecretCodeScreen onSuccess={(level) => {
+        setIsCodeVerified(true);
+        setAccessLevel(level);
+    }} />;
   }
 
   return <Dashboard user={user} telegramConfig={telegramConfig} onSendTelegram={sendTelegramMessage} accessLevel={accessLevel} darkMode={darkMode} setDarkMode={setDarkMode} />;

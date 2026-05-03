@@ -7,7 +7,8 @@ import {
     CheckCircle, X, Plus, Activity, Lock, Search, Calendar, 
     Clock, PhoneCall, FileText, ChevronDown, ChevronUp, Edit, Trash2, UserCheck, Eye, Share2, Copy, Shield, Settings, Save, Info, Droplet, Users, UserMinus, CalendarPlus, HelpCircle, Download, Briefcase, Filter, MessageCircle, Zap, TrendingUp, Award, Star
 } from "lucide-react";
-import { utils, writeFile } from "xlsx";
+import { exportCsv } from "../utils/csvExport";
+import { resolveWamanRoute, sendTelegramToChatIds } from "../utils/telegramRouting";
 import TaskBoard from "./TaskBoard"; 
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-", "لا أعرف"];
@@ -351,14 +352,11 @@ export default function WamanAhyaahaSystem({
                 ...donorForm, lastDonation: donorForm.neverDonated ? "" : donorForm.lastDonation,
                 created_at: new Date().toISOString(), created_by: "Guest", source: "public_form", status: "pending"
             });
-            if (onSendTelegram && telegramConfig?.rules?.wamanAhyaaha?.donors) {
-                const rule = telegramConfig.rules.wamanAhyaaha.donors;
-                const bot = telegramConfig.bots?.find((b: any) => b.id === rule.botId);
-                const botToken = bot?.token || telegramConfig.defaultBotToken;
-                const recipientChatIds = (rule.recipientIds || []).map((rid: string) => telegramConfig.people?.find((p: any) => p.id === rid)?.chatId).filter(Boolean);
-                if (recipientChatIds.length > 0) {
+            if (onSendTelegram && telegramConfig?.rules) {
+                const route = resolveWamanRoute(telegramConfig, "donors");
+                if (route.chatIds.length > 0) {
                     const msg = `🩸 <b>متبرع جديد</b>\n👤 ${donorForm.name} (${donorForm.age})\n🅾️ ${donorForm.bloodType}\n📍 ${donorForm.governorate}-${donorForm.city}`;
-                    recipientChatIds.forEach((chatId: string) => onSendTelegram!(chatId, msg, botToken));
+                    sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
                 }
             }
             setShowSuccessModal(true);
@@ -369,7 +367,7 @@ export default function WamanAhyaahaSystem({
     const closeSuccessModal = () => { setShowSuccessModal(false); if (!forceGuestMode) setViewMode('landing'); };
     
     // Actions
-    const handleExportDonors = () => { try { const data = filteredList.map(d => ({ "Name": d.name, "Type": d.bloodType, "Phone": d.phone1, "City": d.city })); const wb = utils.book_new(); utils.book_append_sheet(wb, utils.json_to_sheet(data), "Donors"); writeFile(wb, "Donors.xlsx"); } catch (e) { alert("Error"); } };
+    const handleExportDonors = () => { try { const data = filteredList.map(d => ({ "Name": d.name, "Type": d.bloodType, "Phone": d.phone1, "City": d.city })); exportCsv(data, "Donors.csv"); } catch (e) { alert("Error"); } };
     const approveDonor = async (id: string, name: string) => { if(!confirm(`قبول ${name}؟`)) return; await updateDoc(doc(db, "blood_donors", id), { status: "approved" }); };
     const deleteDonor = async (id: string) => { if(!confirm("حذف المتبرع؟")) return; await deleteDoc(doc(db, "blood_donors", id)); };
     const markAsDonatedToday = async (id: string, name: string) => { if(!confirm(`تسجيل تبرع ${name} اليوم؟`)) return; await updateDoc(doc(db, "blood_donors", id), { lastDonation: new Date().toISOString().split('T')[0] }); };
@@ -377,14 +375,11 @@ export default function WamanAhyaahaSystem({
         e.preventDefault();
         try {
             await addDoc(collection(db, "blood_requests"), { ...requestForm, imageUrl: "", status: 'active', created_at: new Date().toISOString(), created_by: adminName });
-            if (onSendTelegram && telegramConfig?.rules?.wamanAhyaaha?.distress) {
-                const rule = telegramConfig.rules.wamanAhyaaha.distress;
-                const bot = telegramConfig.bots?.find((b: any) => b.id === rule.botId);
-                const botToken = bot?.token || telegramConfig.defaultBotToken;
-                const recipientChatIds = (rule.recipientIds || []).map((rid: string) => telegramConfig.people?.find((p: any) => p.id === rid)?.chatId).filter(Boolean);
-                if (recipientChatIds.length > 0) {
+            if (onSendTelegram && telegramConfig?.rules) {
+                const route = resolveWamanRoute(telegramConfig, "distress");
+                if (route.chatIds.length > 0) {
                     const msg = `🩸 <b>استغاثة عاجلة</b>\n👤 ${requestForm.patientName}\n💉 ${requestForm.productType} (${requestForm.bagsCount})\n🅾️ ${requestForm.bloodType}\n🏥 ${requestForm.hospitalName}\n📞 ${requestForm.contactPhone}`;
-                    recipientChatIds.forEach((chatId: string) => onSendTelegram!(chatId, msg, botToken));
+                    sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
                 }
             }
             setShowForm(false);

@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { User, signOut } from "firebase/auth";
 import { auth, db } from "../services/firebase";
+import { recruitmentDb } from "../services/recruitmentFirebase";
 import { 
   collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, 
   where, getDoc, getDocs, setDoc, orderBy, limit, writeBatch, arrayUnion, serverTimestamp 
@@ -37,7 +38,16 @@ import {
 } from "./DashboardModals";
 import { DEPARTMENTS, SUPER_ADMIN_EMAIL, CHARITY_ROLES, USER_ROLES } from "../utils/constants";
 import { TRANSLATIONS } from "../utils/translations";
+import {
+  resolveDepartmentLeadership,
+  resolveVolunteerRoute,
+  sendTelegramToChatIds,
+  type TelegramNotifyMode
+} from "../utils/telegramRouting";
+import { getSubmissionCreatedMs, normalizeVolunteerSubmission } from "../utils/volunteerSubmissions";
 import toast, { Toaster } from 'react-hot-toast';
+
+const DEFAULT_MEETING_REMINDERS = [2880, 1440, 60, 30];
 
 // New Interfaces for Telegram Configuration
 interface TelegramContact {
@@ -74,7 +84,7 @@ interface DashboardProps {
 export default function Dashboard({ user, telegramConfig, onSendTelegram, accessLevel = 'full', darkMode, setDarkMode }: DashboardProps) {
   const [currentView, setCurrentView] = useState("overview"); // Default to Overview
   const [adminSubView, setAdminSubView] = useState<'table' | 'structure'>('table'); // Sub-view for General Admin
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
   const [taskFilter, setTaskFilter] = useState<'inbox' | 'today' | 'upcoming' | 'delayed' | 'projects' | 'all'>('all');
@@ -118,7 +128,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
           setSpecialLoginPassword(password);
       }
   }, [userProfile]);
-  
+
   // Profile Setup State
   const [profileSetup, setProfileSetup] = useState({ name: "", departmentId: "", role: "member" });
   
@@ -155,7 +165,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
   const [newEvent, setNewEvent] = useState<any>({ 
       id: "", title: "", date: "", time: "", type: "offline", link: "", details: "", 
       isRecurring: false, recurrenceDay: 'Thursday',
-      notificationSettings: { enabled: true, includeTime: true, includeLocation: true, includeDetails: true, reminders: [1440, 60] },
+      notificationSettings: { enabled: true, includeTime: true, includeLocation: true, includeDetails: true, reminders: DEFAULT_MEETING_REMINDERS },
       sendImmediateNotification: true 
   });
   
@@ -172,36 +182,39 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
   
   const isCharityRestricted = (userProfile?.departmentId === 'charity' && CHARITY_ROLES.some(r => r.id === userProfile.role)) || accessLevel === 'charity_restricted';
 
+  useEffect(() => {
+      if (!userProfile?.departmentId || isSuperAdmin || currentView !== 'overview') return;
+      if (DEPARTMENTS.some(dept => dept.id === userProfile.departmentId)) {
+          setCurrentView(userProfile.departmentId);
+          setTaskFilter('all');
+      }
+  }, [userProfile?.departmentId, isSuperAdmin, currentView]);
+
   const getDeptRuleMeta = (deptId: string) => {
       const rule = telegramConfig?.rules?.departments?.[deptId] || {};
-      const botToken = telegramConfig?.bots?.find((b: any) => b.id === rule?.botId)?.token || telegramConfig?.defaultBotToken;
       const deputyIds = Array.isArray(rule?.deputyIds)
           ? rule.deputyIds
           : (rule?.deputyId ? [rule.deputyId] : []);
-      return { rule, botToken, deputyIds };
+      const route = resolveDepartmentLeadership(telegramConfig, deptId, 'manager_and_deputy');
+      return { rule, botToken: route.botToken, deputyIds };
   };
 
-  const getDeptLeadershipRecipients = (deptId: string, mode: 'manager_only' | 'manager_and_deputy' = 'manager_and_deputy') => {
-      const { rule, deputyIds } = getDeptRuleMeta(deptId);
-      const recipientIds = [
-          rule?.managerId,
-          ...(mode === 'manager_and_deputy' ? deputyIds : [])
-      ].filter(Boolean);
-
-      return Array.from(new Set(
-          recipientIds
-              .map((rid: string) => telegramConfig?.people?.find((p: any) => p.id === rid)?.chatId)
-              .filter(Boolean)
-      )) as string[];
+  const getDeptLeadershipRecipients = (deptId: string, mode: TelegramNotifyMode = 'manager_and_deputy') => {
+      return resolveDepartmentLeadership(telegramConfig, deptId, mode).chatIds;
   };
 
   const sendToAllDeptLeadership = (message: string) => {
       if (!onSendTelegram || !telegramConfig?.rules?.departments) return;
       Object.keys(telegramConfig.rules.departments).forEach((deptId: string) => {
-          const { botToken } = getDeptRuleMeta(deptId);
-          const recipients = getDeptLeadershipRecipients(deptId, 'manager_and_deputy');
-          recipients.forEach((chatId: string) => onSendTelegram(chatId, message, botToken));
+          const route = resolveDepartmentLeadership(telegramConfig, deptId, 'manager_and_deputy');
+          sendTelegramToChatIds(onSendTelegram, route.chatIds, message, route.botToken);
       });
+  };
+
+  const truncateForTelegram = (text: string, maxLen = 220) => {
+      const t = (text || "").replace(/\s+/g, " ").trim();
+      if (!t) return "";
+      return t.length > maxLen ? `${t.slice(0, maxLen)}…` : t;
   };
 
   useEffect(() => {
@@ -217,72 +230,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
   }, [isCharityRestricted, currentView, userProfile?.role]);
 
   // --- Effects ---
-
-  // Reminder Checker - Advanced Version
-  useEffect(() => {
-      const checkReminders = () => {
-          if (!announcements.length || !onSendTelegram) return;
-          const now = new Date();
-          
-          announcements.forEach(async (data) => {
-              // A. Recurring Events Logic
-              if (data.isRecurring) {
-                  const [h, m] = (data.time || "00:00").split(':').map(Number);
-                  let nextOccurrence = new Date();
-                  nextOccurrence.setHours(h, m, 0, 0);
-                  
-                  if (data.recurrenceType === 'weekly') {
-                      const days: any = { 'Sunday': 0, 'Monday': 1, 'Tuesday': 2, 'Wednesday': 3, 'Thursday': 4, 'Friday': 5, 'Saturday': 6 };
-                      const targetDay = days[data.recurrenceDay || 'Thursday'];
-                      const currentDay = nextOccurrence.getDay();
-                      let daysUntil = (targetDay - currentDay + 7) % 7;
-                      nextOccurrence.setDate(nextOccurrence.getDate() + daysUntil);
-                  } else if (data.recurrenceType === 'monthly') {
-                      const targetDayOfMonth = parseInt(data.recurrenceDayOfMonth || '1');
-                      nextOccurrence.setDate(targetDayOfMonth);
-                  }
-                  
-                  if (nextOccurrence < now) {
-                      if (data.recurrenceType === 'daily') nextOccurrence.setDate(nextOccurrence.getDate() + 1);
-                      else if (data.recurrenceType === 'weekly') nextOccurrence.setDate(nextOccurrence.getDate() + 7);
-                      else if (data.recurrenceType === 'monthly') nextOccurrence.setMonth(nextOccurrence.getMonth() + 1);
-                  }
-
-                  const diffMins = (nextOccurrence.getTime() - now.getTime()) / 60000;
-                  const todayStr = now.toISOString().split('T')[0];
-                  if (data.lastReminderSentDate === todayStr) return;
-
-                  const reminders = data.notificationSettings?.reminders || [60];
-                  const shouldSend = reminders.some((r: number) => Math.abs(diffMins - r) <= 2);
-
-                  if (shouldSend) {
-                      let msg = `⏰ <b>تذكير: اجتماع دوري (خلال ${Math.ceil(diffMins)} دقيقة)</b>\n\n📌 <b>${data.topic}</b>\n🕒 <b>الموعد:</b> ${data.time}\n`;
-                      if (data.locationType === 'online') msg += `🔗 <b>الرابط:</b> ${data.link}`; 
-                      else msg += `📍 <b>المكان:</b> ${data.details}`;
-                      sendToAllDeptLeadership(msg);
-                      await updateDoc(doc(db, "management_meetings", data.id), { lastReminderSentDate: todayStr });
-                  }
-              } 
-              // B. One-time Events
-              else if (!data.reminderSent && data.date && data.time) {
-                  const eventTime = new Date(`${data.date}T${data.time}`);
-                  const diffMins = (eventTime.getTime() - now.getTime()) / 60000;
-                  const reminders = data.notificationSettings?.reminders || [60];
-                  const shouldSend = reminders.some((r: number) => Math.abs(diffMins - r) <= 2);
-
-                  if (shouldSend) {
-                      let msg = `⏰ <b>تذكير: موعد اجتماع (خلال ${Math.ceil(diffMins)} دقيقة)</b>\n\n📌 <b>${data.topic}</b>\n🕒 <b>الموعد:</b> ${data.time}\n`;
-                      if (data.locationType === 'online') msg += `🔗 <b>الرابط:</b> ${data.link}`; 
-                      else msg += `📍 <b>المكان:</b> ${data.details}`;
-                      sendToAllDeptLeadership(msg);
-                      await updateDoc(doc(db, "management_meetings", data.id), { reminderSent: true });
-                  }
-              }
-          });
-      };
-      const interval = setInterval(checkReminders, 60000);
-      return () => clearInterval(interval);
-  }, [announcements, onSendTelegram, telegramConfig]);
+  // (تذكيرات الاجتماعات: يُستخدم المؤقت أدناه الذي يقرأ كل سجلات management_meetings لتفادي التكرار وعدم تفويت الاجتماعات)
 
   useEffect(() => {
       // Load User Profile
@@ -369,7 +317,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
     const q = query(collection(db, "submissions"), orderBy("createdAt", "desc"), limit(1));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
-        if (change.type === "added" && onSendTelegram && !change.doc.metadata.fromCache && telegramConfig && telegramConfig.volunteerContacts) {
+        if (change.type === "added" && onSendTelegram && !change.doc.metadata.fromCache && telegramConfig?.rules) {
           const data = change.doc.data();
           
           // Avoid processing old documents on initial load (check if created within last minute)
@@ -394,17 +342,14 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
           if (deptObj) targetDeptId = deptObj.id;
 
           // --- NEW RULE-BASED TELEGRAM LOGIC ---
-          if (telegramConfig?.rules?.volunteers) {
-              const rule = telegramConfig.rules.volunteers[targetDeptId] || telegramConfig.rules.volunteers['general'];
-              if (rule && rule.recipientIds && rule.recipientIds.length > 0) {
+          if (telegramConfig?.rules) {
+              const volunteerRoute = resolveVolunteerRoute(telegramConfig, targetDeptId);
+              if (volunteerRoute.chatIds.length > 0) {
                   // Get Bot Token
-                  const bot = telegramConfig.bots?.find((b: any) => b.id === rule.botId);
-                  const botToken = bot?.token || telegramConfig.defaultBotToken;
+                  const botToken = volunteerRoute.botToken;
 
                   // Get Recipient Chat IDs
-                  const recipientChatIds = rule.recipientIds
-                      .map((rid: string) => telegramConfig.people?.find((p: any) => p.id === rid)?.chatId)
-                      .filter(Boolean);
+                  const recipientChatIds = volunteerRoute.chatIds;
 
                   if (recipientChatIds.length > 0) {
                       let msg = `🔔 <b>طلب تطوع جديد لقسم ${deptObj?.nameAr || targetDeptId}</b>\n`;
@@ -425,6 +370,51 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
     });
 
     return () => unsubscribe();
+  }, [telegramConfig, onSendTelegram]);
+
+  useEffect(() => {
+    if (!onSendTelegram || !telegramConfig?.rules) return;
+
+    const notifyLegacyVolunteer = (rawData: any, docId: string, collectionName: string) => {
+        const createdAt = getSubmissionCreatedMs(rawData);
+        if (!createdAt || Date.now() - createdAt > 60000) return;
+
+        const data = normalizeVolunteerSubmission(docId, rawData, "legacy", collectionName);
+        const targetDeptId = data.section || "general";
+        const deptObj = DEPARTMENTS.find(d => d.id === targetDeptId || d.nameAr === data.rawSection || d.name === data.rawSection);
+        const volunteerRoute = resolveVolunteerRoute(telegramConfig, targetDeptId);
+        if (!volunteerRoute.chatIds.length) return;
+
+        toast.success(`طلب انضمام جديد من الموقع القديم: ${data.name || "متطوع جديد"}`, {
+            icon: '🚀',
+            style: { borderRadius: '10px', background: '#333', color: '#fff' }
+        });
+
+        let msg = `🔔 <b>طلب تطوع جديد لقسم ${deptObj?.nameAr || targetDeptId}</b>\n`;
+        msg += `👤 <b>الاسم:</b> ${data.name || "-"}\n`;
+        msg += `📱 <b>الهاتف:</b> ${data.phone || "-"}\n`;
+        msg += `🎓 <b>الجامعة:</b> ${data.university || "-"}${data.faculty ? ` - ${data.faculty}` : ""}\n`;
+        msg += `📝 <b>السبب:</b> ${data.reason || "-"}\n`;
+        if (data.pdfUrl) msg += `📄 <b>السيرة الذاتية:</b> <a href="${data.pdfUrl}">تحميل PDF</a>`;
+        sendTelegramToChatIds(onSendTelegram, volunteerRoute.chatIds, msg, volunteerRoute.botToken);
+    };
+
+    const sources = [
+        { collectionName: "join_requests", queryRef: query(collection(recruitmentDb, "join_requests")) },
+        { collectionName: "submissions", queryRef: query(collection(recruitmentDb, "submissions")) }
+    ];
+
+    const unsubscribers = sources.map((source) => onSnapshot(source.queryRef, (snapshot) => {
+        snapshot.docChanges().forEach((change) => {
+            if (change.type === "added" && !change.doc.metadata.fromCache) {
+                notifyLegacyVolunteer(change.doc.data(), change.doc.id, source.collectionName);
+            }
+        });
+    }, (error) => {
+        console.warn(`Unable to listen to legacy volunteer source ${source.collectionName}`, error);
+    }));
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe());
   }, [telegramConfig, onSendTelegram]);
 
 
@@ -453,7 +443,8 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
               
               snapshot.docs.forEach(async (docSnap) => {
                   const data = docSnap.data();
-                  
+                  if (data.notificationSettings && data.notificationSettings.enabled === false) return;
+
                   // A. Recurring Events Logic
                   if (data.isRecurring && data.recurrenceDay && data.time) {
                       const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -491,7 +482,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                       const shouldSend = reminders.some((r: number) => Math.abs(diffMins - r) <= 2);
 
                       if (shouldSend) {
-                          let msg = `⏰ <b>تذكير: اجتماع دوري (خلال ${Math.ceil(diffMins)} دقيقة)</b>\n\n📌 <b>${data.topic}</b>\n🔄 <b>يتكرر كل:</b> ${data.recurrenceDay}\n🕒 <b>الموعد:</b> ${data.time}\n`;
+                          let msg = `⏰ <b>تذكير اجتماع متكرر</b> (خلال ${Math.ceil(diffMins)} دقيقة)\n\n📌 <b>${data.topic}</b>\n🔄 <b>يتكرر:</b> ${data.recurrenceDay}\n🕒 <b>الساعة:</b> ${data.time}\n📅 <b>تاريخ اليوم:</b> ${now.toLocaleDateString('ar-EG')}\n`;
                           if (data.locationType === 'online') msg += `🔗 <b>الرابط:</b> ${data.link}`; 
                           else msg += `📍 <b>المكان:</b> ${data.details}`;
                           sendToAllDeptLeadership(msg);
@@ -519,7 +510,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                       const legacyShouldSend = (diffMins <= triggerOffset && diffMins > -30);
 
                       if (shouldSend || legacyShouldSend) {
-                          let msg = `⏰ <b>تذكير: اقترب موعد الاجتماع (خلال ${Math.ceil(diffMins)} دقيقة)</b>\n\n📌 <b>${data.topic}</b>\n🕒 <b>الموعد:</b> ${data.time}\n`;
+                          let msg = `⏰ <b>تذكير اجتماع</b> (خلال ${Math.ceil(diffMins)} دقيقة)\n\n📌 <b>${data.topic}</b>\n📅 <b>التاريخ:</b> ${data.date}\n🕒 <b>الساعة:</b> ${data.time}\n`;
                           if (data.locationType === 'online') msg += `🔗 <b>الرابط:</b> ${data.link}`; 
                           else msg += `📍 <b>المكان:</b> ${data.details}`;
                           sendToAllDeptLeadership(msg);
@@ -678,23 +669,21 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
       setEduData({ subjectName: "", noteType: "", batchNumber: "", requestType: "" });
       
       // --- NEW RULE-BASED TELEGRAM LOGIC ---
-      if (activeDeptId === 'hr' && dataToUse.targetDept && onSendTelegram && !dataToUse.isForSelf && telegramConfig?.rules?.departments) {
-          const rule = telegramConfig.rules.departments[dataToUse.targetDept];
-          if (rule) {
-              const bot = telegramConfig.bots?.find((b: any) => b.id === rule.botId);
-              const botToken = bot?.token || telegramConfig.defaultBotToken;
+      if (!dataToUse.isForSelf && targetDept && onSendTelegram && telegramConfig?.rules?.departments) {
+          const route = resolveDepartmentLeadership(telegramConfig, targetDept, 'manager_and_deputy');
+          if (route.chatIds.length > 0) {
+              const botToken = route.botToken;
+              const sourceDeptName = DEPARTMENTS.find(d => d.id === (userProfile?.departmentId || activeDeptId))?.nameAr || userProfile?.departmentId || activeDeptId;
+              const targetDeptName = DEPARTMENTS.find(d => d.id === targetDept)?.nameAr || targetDept;
 
-              const deputyIds = Array.isArray(rule?.deputyIds) ? rule.deputyIds : (rule?.deputyId ? [rule.deputyId] : []);
-              const recipientIds = [rule.managerId, ...deputyIds].filter(Boolean);
-              const recipientChatIds = recipientIds
-                  .map((rid: string) => telegramConfig.people?.find((p: any) => p.id === rid)?.chatId)
-                  .filter(Boolean);
+              const recipientChatIds = route.chatIds;
 
               if (recipientChatIds.length > 0) {
                   let msg = `📢 <b>تكليف جديد من الموارد البشرية</b>\n\n📌 <b>المهمة:</b> ${finalTitle}\n📝 <b>التفاصيل:</b> ${finalDetails}\n🚨 <b>الأولوية:</b> ${dataToUse.priority}\n👤 <b>بواسطة:</b> ${userProfile?.displayName}`;
                   if (dataToUse.assignedToName) msg += `\n🎯 <b>المكلف:</b> ${dataToUse.assignedToName}`;
                   if (dataToUse.selectedLogos && dataToUse.selectedLogos.length > 0) msg += `\n🖼 <b>اللوجوهات:</b> ${dataToUse.selectedLogos.join(', ')}`;
 
+                  msg += `\n📤 <b>من قسم:</b> ${sourceDeptName}\n📥 <b>إلى قسم:</b> ${targetDeptName}`;
                   recipientChatIds.forEach((chatId: string) => {
                       onSendTelegram(chatId, msg, botToken);
                   });
@@ -736,7 +725,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
           const recipientChatIds = getDeptLeadershipRecipients(originalSourceDept, 'manager_and_deputy');
           if (recipientChatIds.length > 0) {
               const completedAtText = new Date().toLocaleString('ar-EG');
-              const msg = `✅ <b>تم إنجاز المهمة</b>\n\n📌 <b>المهمة:</b> ${task.title}\n📤 <b>القسم المحوِّل:</b> ${DEPARTMENTS.find(d => d.id === originalSourceDept)?.nameAr || originalSourceDept}\n📥 <b>القسم المنفذ:</b> ${DEPARTMENTS.find(d => d.id === task.targetDept)?.nameAr || task.targetDept}\n👤 <b>بواسطة:</b> ${userProfile?.displayName || user.email}\n📅 <b>التاريخ/الوقت:</b> ${completedAtText}\n🎨 <b>ملاحظة:</b> تم تنفيذ التصميم وسيتم التسليم من خلال وصلة الإخراج الفني.`;
+              const msg = `✅ <b>تم إنجاز المهمة</b>\n\n📌 <b>المهمة:</b> ${task.title}\n📤 <b>قسم طلب العمل:</b> ${DEPARTMENTS.find(d => d.id === originalSourceDept)?.nameAr || originalSourceDept}\n📥 <b>قسم التنفيذ:</b> ${DEPARTMENTS.find(d => d.id === task.targetDept)?.nameAr || task.targetDept}\n👤 <b>أُنجزت بواسطة:</b> ${userProfile?.displayName || user.email}\n📅 <b>تاريخ ووقت الإنجاز:</b> ${completedAtText}\n🎨 <b>التسليم:</b> تم تنفيذ التصميم وسيتم التسليم من خلال وصلة الإخراج الفني.`;
               recipientChatIds.forEach((chatId: string) => onSendTelegram(chatId, msg, botToken));
           }
       }
@@ -852,6 +841,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
           title: forwardModal.task.title,
           details: details,
           sourceDept: activeDeptId,           // ← the dept that SENT it
+          originalSourceDept: activeDeptId,   // ← يبقى ثابتاً لإشعارات القبول/الإنجاز
           targetDept: finalTargetDeptId,     // ← the dept that RECEIVES it
           forwardedFrom: activeDeptId,
           forwardedByName: userProfile?.displayName || user.email,
@@ -892,34 +882,15 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
       if (onSendTelegram) {
           const urgencyEmoji = urgency === 'very_urgent' ? '🔴🔴 عاجل جداً 🔴🔴' : urgency === 'urgent' ? '🟠 عاجل' : '📋';
           const forwardedAtText = new Date().toLocaleString('ar-EG');
-          const msg = `${urgencyEmoji}\n<b>مهمة محوَّلة جديدة</b>\n\n📤 <b>من القسم:</b> ${sourceDeptName}\n👤 <b>المحوِّل:</b> ${userProfile?.displayName || user.email}\n📥 <b>إلى القسم:</b> ${targetDeptName}\n📌 <b>المهمة:</b> ${forwardModal.task.title}\n🚦 <b>حالة المهمة:</b> ${urgency === 'very_urgent' ? 'عاجلة جداً' : urgency === 'urgent' ? 'عاجلة' : 'عادية'}\n📅 <b>التاريخ/الوقت:</b> ${forwardedAtText}${forwardNote ? `\n💬 <b>ملاحظة:</b> ${forwardNote}` : ''}${forwardMemberName ? `\n👤 <b>تعيين إلى:</b> ${forwardMemberName}` : ''}${(selectedLogos ?? []).length > 0 ? `\n🖼 <b>اللوجوهات:</b> ${selectedLogos!.join(', ')}` : ''}`;
+          const detailsPreview = truncateForTelegram(forwardModal.task.details || "", 240);
+          const msg = `${urgencyEmoji}\n<b>مهمة محوَّلة جديدة</b>\n\n📤 <b>من القسم:</b> ${sourceDeptName}\n👤 <b>المحوِّل:</b> ${userProfile?.displayName || user.email}\n📥 <b>إلى القسم:</b> ${targetDeptName}\n📌 <b>عنوان المهمة:</b> ${forwardModal.task.title}${detailsPreview ? `\n📝 <b>نص المهمة:</b> ${detailsPreview}` : ''}\n🚦 <b>الأولوية / الحالة:</b> ${urgency === 'very_urgent' ? 'عاجلة جداً' : urgency === 'urgent' ? 'عاجلة' : 'عادية'}\n📅 <b>تاريخ ووقت التحويل:</b> ${forwardedAtText}${forwardNote ? `\n💬 <b>ملاحظة التحويل:</b> ${forwardNote}` : ''}${forwardMemberName ? `\n👤 <b>تعيين إلى:</b> ${forwardMemberName}` : ''}${(selectedLogos ?? []).length > 0 ? `\n🖼 <b>اللوجوهات:</b> ${selectedLogos!.join(', ')}` : ''}`;
 
           try {
-              const chatIdsToNotify = new Set<string>();
               const deptRule = telegramConfig?.rules?.departments?.[finalTargetDeptId];
-              const selectedBot = telegramConfig?.bots?.find((b: any) => b.id === deptRule?.botId);
-              const botToken = selectedBot?.token || telegramConfig?.defaultBotToken;
               const notifyMode = deptRule?.forwardNotifyMode || 'manager_and_deputy';
-
-              if (deptRule?.managerId) {
-                  const managerChatId = telegramConfig?.people?.find((p: any) => p.id === deptRule.managerId)?.chatId;
-                  if (managerChatId) chatIdsToNotify.add(String(managerChatId));
-              }
-              const deputyIds = Array.isArray(deptRule?.deputyIds)
-                  ? deptRule.deputyIds
-                  : (deptRule?.deputyId ? [deptRule.deputyId] : []);
-              if (notifyMode === 'manager_and_deputy') {
-                  deputyIds.forEach((deputyId: string) => {
-                      const deputyChatId = telegramConfig?.people?.find((p: any) => p.id === deputyId)?.chatId;
-                      if (deputyChatId) chatIdsToNotify.add(String(deputyChatId));
-                  });
-              }
-
-              // Send notifications
-              chatIdsToNotify.forEach(cid => {
-                  onSendTelegram(cid, msg, botToken);
-              });
-              console.log(`Telegram notifications sent to ${chatIdsToNotify.size} targets for ${finalTargetDeptId}`);
+              const route = resolveDepartmentLeadership(telegramConfig, finalTargetDeptId, notifyMode);
+              sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
+              console.log(`Telegram notifications sent to ${route.chatIds.length} targets for ${finalTargetDeptId}`);
 
           } catch(e) { console.error('Telegram forwarding logic error:', e); }
       }
@@ -978,7 +949,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
               const { botToken } = getDeptRuleMeta(sourceDeptToNotify);
               const recipients = getDeptLeadershipRecipients(sourceDeptToNotify, 'manager_and_deputy');
               const acceptedAtText = new Date().toLocaleString('ar-EG');
-              const acceptanceMsg = `✅ <b>تم قبول المهمة</b>\n\n📌 <b>المهمة:</b> ${task.title}\n📤 <b>القسم المحوِّل:</b> ${DEPARTMENTS.find(d => d.id === sourceDeptToNotify)?.nameAr || sourceDeptToNotify}\n📥 <b>القسم المستلم:</b> ${DEPARTMENTS.find(d => d.id === task.targetDept)?.nameAr || task.targetDept}\n👤 <b>تم القبول بواسطة:</b> ${actorName}\n📅 <b>التاريخ/الوقت:</b> ${acceptedAtText}`;
+              const acceptanceMsg = `✅ <b>تم قبول المهمة</b>\n\n📌 <b>المهمة:</b> ${task.title}\n📤 <b>قسم التحويل:</b> ${DEPARTMENTS.find(d => d.id === sourceDeptToNotify)?.nameAr || sourceDeptToNotify}\n📥 <b>قسم التنفيذ:</b> ${DEPARTMENTS.find(d => d.id === task.targetDept)?.nameAr || task.targetDept}\n👤 <b>قُبلت بواسطة:</b> ${actorName}\n📅 <b>تاريخ ووقت القبول:</b> ${acceptedAtText}`;
               recipients.forEach((chatId: string) => onSendTelegram(chatId, acceptanceMsg, botToken));
           }
 
@@ -1020,6 +991,14 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
               });
           } catch (pulseError) {
               console.error("Pulse log failed after reject:", pulseError);
+          }
+
+          const sourceDeptToNotify = task.originalSourceDept || task.forwardedFrom || task.sourceDept;
+          if (onSendTelegram && sourceDeptToNotify) {
+              const route = resolveDepartmentLeadership(telegramConfig, sourceDeptToNotify, 'manager_and_deputy');
+              const rejectedAtText = new Date().toLocaleString('ar-EG');
+              const rejectionMsg = `❌ <b>تم رفض المهمة</b>\n\n📌 <b>المهمة:</b> ${task.title}\n📤 <b>قسم التحويل:</b> ${DEPARTMENTS.find(d => d.id === sourceDeptToNotify)?.nameAr || sourceDeptToNotify}\n📥 <b>قسم التنفيذ:</b> ${DEPARTMENTS.find(d => d.id === task.targetDept)?.nameAr || task.targetDept}\n👤 <b>رُفضت بواسطة:</b> ${actorName}\n📝 <b>السبب:</b> ${reason}\n📅 <b>تاريخ ووقت الرفض:</b> ${rejectedAtText}`;
+              sendTelegramToChatIds(onSendTelegram, route.chatIds, rejectionMsg, route.botToken);
           }
 
           toast.success("تم رفض المهمة وإرسال التغذية الراجعة");
@@ -1143,7 +1122,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
 
               // 2. Send Telegram (Immediate Announcement)
               if (newEvent.sendImmediateNotification && newEvent.notificationSettings.enabled && onSendTelegram) {
-                  let msg = `📢 <b>${newEvent.title}</b>\n\n`;
+                  let msg = `📣 <b>إعلان اجتماع</b> — يُرسل لرؤساء الأقسام والنواب\n\n📢 <b>${newEvent.title}</b>\n\n`;
                   if (newEvent.notificationSettings.includeTime) {
                       if (newEvent.isRecurring) {
                           msg += `🔄 <b>يتكرر كل:</b> ${newEvent.recurrenceDay}\n🕒 <b>الساعة:</b> ${newEvent.time}\n`;
@@ -1256,7 +1235,6 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
 
   const MobileBottomNav = () => {
       const navItems = [
-          { id: 'overview', icon: Home, label: 'الرئيسية', grad: 'from-indigo-500 to-purple-600', show: true },
           ...(!isCharityRestricted ? [{ id: 'identity', icon: Palette, label: 'الهوية', grad: 'from-pink-500 to-rose-600', show: true }] : []),
           ...((isSuperAdmin || userProfile?.canViewReports || userProfile?.role === 'manager' || userProfile?.role === 'deputy') ? [{ id: 'reports', icon: BarChart2, label: 'التقارير', grad: 'from-violet-500 to-indigo-600', show: true }] : []),
           ...((isSuperAdmin || userProfile?.canViewAdminTable) && !isCharityRestricted ? [{ id: 'calendar', icon: Calendar, label: 'الأجندة', grad: 'from-blue-500 to-cyan-600', show: true }] : []),
@@ -1333,7 +1311,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
             />
         )}
 
-        <aside className={`fixed md:relative inset-y-0 right-0 w-72 bg-white dark:bg-gray-900 border-l border-gray-100 dark:border-gray-800 z-50 transform transition-transform duration-300 ease-in-out ${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} md:translate-x-0 flex flex-col h-full shrink-0`}>
+        <aside className={`${isSidebarOpen ? 'translate-x-0' : 'translate-x-full'} fixed inset-y-0 right-0 z-50 flex w-[86vw] max-w-[340px] flex-col bg-white shadow-2xl transition-transform duration-300 dark:bg-gray-900 md:static md:h-full md:w-72 md:max-w-none md:translate-x-0 md:shadow-none border-l border-gray-100 dark:border-gray-800 shrink-0`}>
             {/* Brand Logo Header */}
             <div className="p-6 pb-2">
                 <div className="flex items-center gap-3">
@@ -1649,19 +1627,16 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
             {/* Top Bar - Professional Redesign */}
             <header className="bg-white/80 dark:bg-gray-900/90 backdrop-blur-md border-b border-gray-100 dark:border-gray-800/60 px-4 md:px-8 py-0 flex justify-between items-center sticky top-0 z-40 h-14 md:h-16">
                 <div className="flex items-center gap-3">
-                    <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="md:hidden p-2 text-gray-500 dark:text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition">
+                    <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 text-gray-500 dark:text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition">
                         <PanelLeft size={18} />
                     </button>
-                    <button onClick={() => setCurrentView('overview')} className="hidden xs:flex p-2 text-gray-500 dark:text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition" title="الرئيسية">
-                        <Home size={18} />
-                    </button>
-                    <div className="md:hidden w-8 h-8 flex items-center justify-center">
+                    <button onClick={() => setCurrentView(isSuperAdmin ? 'overview' : (userProfile?.departmentId || 'overview'))} className="md:hidden w-8 h-8 flex items-center justify-center">
                         <img 
                             src="https://od.lk/s/ODZfNzM1MTAwOTVf/%D9%84%D9%88%D8%AC%D9%88%20%D9%85%D8%B9%D9%88%D8%A7%D9%86.png" 
                             alt="Logo" 
                             className="w-full h-full object-contain"
                         />
-                    </div>
+                    </button>
                     <div className="flex items-center gap-2">
                         {currentView !== 'overview' && (
                             <span className="hidden md:block w-px h-5 bg-gray-200 dark:bg-gray-700" />
@@ -1832,6 +1807,30 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
 
 
                         {/* --- MAIN DEPARTMENTS GRID --- */}
+                        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                            <button onClick={() => setIsAddingTaskGlobal(true)} className="rounded-2xl bg-gray-950 p-4 text-right text-white shadow-sm transition active:scale-[0.98] dark:bg-white dark:text-gray-950">
+                                <Plus size={18} className="mb-3" />
+                                <p className="text-sm font-black">مهمة جديدة</p>
+                                <p className="mt-1 text-[11px] opacity-60">إضافة سريعة للقسم</p>
+                            </button>
+                            <button onClick={() => { setCurrentView(userProfile?.departmentId || filteredDepartments[0]?.id || 'overview'); setTaskFilter('inbox'); }} className="rounded-2xl border border-gray-200 bg-white p-4 text-right shadow-sm transition active:scale-[0.98] dark:border-gray-700 dark:bg-gray-800">
+                                <Inbox size={18} className="mb-3 text-blue-600" />
+                                <p className="text-sm font-black text-gray-900 dark:text-white">الوارد</p>
+                                <p className="mt-1 text-[11px] text-gray-400">{tasks.filter(t => t.targetDept === userProfile?.departmentId && t.status !== 'completed').length} مهمة</p>
+                            </button>
+                            <button onClick={() => setCurrentView('calendar')} className="rounded-2xl border border-gray-200 bg-white p-4 text-right shadow-sm transition active:scale-[0.98] dark:border-gray-700 dark:bg-gray-800">
+                                <Calendar size={18} className="mb-3 text-emerald-600" />
+                                <p className="text-sm font-black text-gray-900 dark:text-white">الأجندة</p>
+                                <p className="mt-1 text-[11px] text-gray-400">{announcements.length} إعلان</p>
+                            </button>
+                            {accessLevel !== 'charity_restricted' && (isSuperAdmin || userProfile?.role === 'manager' || userProfile?.role === 'deputy') && (
+                                <button onClick={() => setCurrentView('chat')} className="rounded-2xl border border-gray-200 bg-white p-4 text-right shadow-sm transition active:scale-[0.98] dark:border-gray-700 dark:bg-gray-800">
+                                    <MessageCircle size={18} className="mb-3 text-indigo-600" />
+                                    <p className="text-sm font-black text-gray-900 dark:text-white">المحادثة</p>
+                                    <p className="mt-1 text-[11px] text-gray-400">صفحة كاملة</p>
+                                </button>
+                            )}
+                        </div>
                         <div>
                             <div className="flex items-center justify-between mb-5">
                                 <h3 className="text-xl md:text-2xl font-black text-gray-800 dark:text-white flex items-center gap-3">
@@ -1853,13 +1852,13 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                                 )}
                             </div>
                             
-                            <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 md:gap-6">
                                 {filteredDepartments.map(dept => {
                                     return (
                                         <button 
                                             key={dept.id} 
                                             onClick={() => setCurrentView(dept.id)}
-                                            className={`relative group overflow-hidden rounded-[1.5rem] md:rounded-[2rem] p-4 md:p-6 h-40 md:h-56 flex flex-col justify-between shadow-sm hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02] border border-gray-100 dark:border-gray-800 ${dept.bgClass} bg-opacity-90 dark:bg-opacity-100`}
+                                            className={`relative group overflow-hidden rounded-2xl md:rounded-[2rem] p-4 md:p-6 h-28 md:h-56 flex flex-col justify-between shadow-sm hover:shadow-xl transition-all duration-300 transform hover:scale-[1.02] border border-gray-100 dark:border-gray-800 ${dept.bgClass} bg-opacity-90 dark:bg-opacity-100`}
                                         >
                                             {/* Decorative Background Icon */}
                                             <dept.icon 
@@ -1989,11 +1988,12 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                     </div>
                 )}
                 {currentView === 'chat' && (
-                    <div className="h-full md:p-6">
-                        <div className="h-full bg-white dark:bg-gray-800 rounded-2xl shadow-premium overflow-hidden border border-gray-100 dark:border-gray-700">
+                    <div className="h-full md:p-4">
+                        <div className="h-full overflow-hidden bg-white dark:bg-gray-800 md:rounded-2xl md:shadow-premium md:border md:border-gray-100 md:dark:border-gray-700">
                              <ChatSystem 
                                 user={user} 
                                 userProfile={userProfile} 
+                                onClose={() => setCurrentView(userProfile?.departmentId || 'overview')}
                                 departments={DEPARTMENTS}
                                 telegramConfig={telegramConfig}
                                 onSendTelegram={onSendTelegram}
@@ -2003,7 +2003,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                     </div>
                 )}
                 {currentView === 'admin' && <AdminTable user={user} mode="general" />}
-                {currentView === 'join_requests' && <JoinRequests user={user} />}
+                {currentView === 'join_requests' && <JoinRequests user={user} userProfile={userProfile} />}
                 {currentView === 'user_management' && <UserManagement />}
                 {currentView === 'blood_bank_users' && (
                     <ControlCenter user={user} userProfile={userProfile} initialTab="blood_bank" />

@@ -386,7 +386,7 @@ export default function TelegramMotherPanel() {
                                                         onChange={e => updateRule('departments', dept.id, { forwardNotifyMode: e.target.value })}
                                                     >
                                                         <option value="manager_only">الرئيس فقط</option>
-                                                        <option value="manager_and_deputy">الرئيس والنائب</option>
+                                                        <option value="manager_and_deputy">الرئيس والنواب</option>
                                                     </select>
                                                 </div>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -434,6 +434,9 @@ export default function TelegramMotherPanel() {
                         {/* B. VOLUNTEERS RULES */}
                         {activeRuleSubTab === 'volunteers' && (
                             <div className="space-y-4">
+                                <div className="bg-orange-50 dark:bg-orange-900/10 text-orange-700 dark:text-orange-300 border border-orange-100 dark:border-orange-800 rounded-xl px-4 py-3 text-xs font-bold">
+                                    لو لم تختار مستلمين لطلبات التطوع، سيتم الإرسال تلقائيا لرئيس القسم ونوابه من تبويب رؤساء الأقسام.
+                                </div>
                                 {DEPARTMENTS.filter(d => d.id !== 'hr').map(dept => {
                                     const rule = config.rules.volunteers[dept.id] || { recipientIds: [], botId: "" };
                                     return (
@@ -475,6 +478,9 @@ export default function TelegramMotherPanel() {
                         {/* C. WAMAN AHYAAHA RULES */}
                         {activeRuleSubTab === 'waman' && (
                             <div className="space-y-6">
+                                <div className="bg-red-50 dark:bg-red-900/10 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-800 rounded-xl px-4 py-3 text-xs font-bold">
+                                    لو لم تختار مستلمين هنا، سيتم الإرسال لرئيس ونواب قسم ومن أحياها من تبويب رؤساء الأقسام.
+                                </div>
                                 {/* Distress Rules */}
                                 <div className="bg-red-50 dark:bg-red-900/10 p-6 rounded-2xl border border-red-100 dark:border-red-800 space-y-4">
                                     <div className="flex items-center justify-between">

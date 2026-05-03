@@ -1,7 +1,7 @@
 import { Crown, BookOpen, Stethoscope, Megaphone, Heart, PenTool, Users, Activity, Flag, AlertCircle, CheckCircle, Clock } from "lucide-react";
 
 export const SUPER_ADMIN_EMAIL = "dr.mahmoud.elhenawy@gmail.com";
-export const TELEGRAM_BOT_TOKEN = "8048288694:AAH92QC0rHgkaYHjQxQyWLU3PRrhTiGmLZA";
+export const TELEGRAM_BOT_TOKEN = (import.meta as any).env?.VITE_TELEGRAM_BOT_TOKEN || "";
 
 export const DEPARTMENTS = [
   // Special Department: Senior Management

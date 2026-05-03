@@ -1,15 +1,13 @@
 import React, { useState } from "react";
 import { auth } from "../services/firebase";
 import { signOut } from "firebase/auth";
-import { ShieldCheck, LogOut, Sun, Moon } from "lucide-react";
+import { ShieldCheck, LogOut } from "lucide-react";
 
 interface SecretCodeScreenProps {
   onSuccess: (accessLevel: 'full' | 'charity_restricted') => void;
-  darkMode: boolean;
-  setDarkMode: (val: boolean) => void;
 }
 
-export default function SecretCodeScreen({ onSuccess, darkMode, setDarkMode }: SecretCodeScreenProps) {
+export default function SecretCodeScreen({ onSuccess }: SecretCodeScreenProps) {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
 
@@ -31,23 +29,17 @@ export default function SecretCodeScreen({ onSuccess, darkMode, setDarkMode }: S
 
   return (
     <div
-      className="min-h-screen bg-slate-50 dark:bg-gradient-to-br dark:from-gray-900 dark:to-indigo-950 flex items-center justify-center p-4 font-sans transition-colors duration-500"
+      className="min-h-screen bg-gradient-to-br from-gray-900 to-indigo-950 flex items-center justify-center p-4 font-sans"
+      dir="rtl"
     >
-      {/* ── Theme Toggle ── */}
-      <button 
-        onClick={() => setDarkMode(!darkMode)}
-        className="absolute top-6 left-6 z-50 p-3 rounded-2xl bg-white dark:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-white shadow-xl hover:scale-110 active:scale-95 transition-all"
-      >
-        {darkMode ? <Sun size={20} /> : <Moon size={20} />}
-      </button>
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden relative border border-slate-200 dark:border-white/10">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden relative">
         <div className="h-2 w-full bg-indigo-500 absolute top-0"></div>
         <div className="p-8 text-center">
-          <div className="mx-auto w-16 h-16 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mb-4 text-indigo-600 dark:text-indigo-400">
+          <div className="mx-auto w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mb-4 text-indigo-600">
             <ShieldCheck size={32} />
           </div>
-          <h2 className="text-xl font-bold text-gray-800 dark:text-white">تحقق أمني إضافي</h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">
+          <h2 className="text-xl font-bold text-gray-800">تحقق أمني إضافي</h2>
+          <p className="text-gray-500 text-sm mt-2">
             يرجى إدخال كود الوصول الخاص بالفريق
           </p>
 
@@ -55,7 +47,7 @@ export default function SecretCodeScreen({ onSuccess, darkMode, setDarkMode }: S
             <div>
               <input
                 type="password"
-                className="w-full text-center text-lg tracking-widest px-4 py-3 rounded-lg border-2 border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 text-slate-900 dark:text-white focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition"
+                className="w-full text-center text-lg tracking-widest px-4 py-3 rounded-lg border-2 border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition"
                 placeholder="أدخل الكود هنا"
                 value={code}
                 onChange={(e) => setCode(e.target.value)}

@@ -83,7 +83,7 @@ const TaskCard: React.FC<any> = ({ task, isIncoming, onToggle, onDelete, onForwa
       )}
       <div 
           onClick={onOpen} 
-        className={`group relative bg-white dark:bg-gray-800 rounded-2xl p-4 mb-3 border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-all cursor-pointer ${task.status === "completed" ? "opacity-60" : ""} ${(showForwardMenu || showCategoryMenu) ? 'z-[60]' : 'z-10 hover:z-20'}`}
+        className={`group relative bg-white dark:bg-gray-800 rounded-2xl p-4 mb-3 border border-gray-100 dark:border-gray-700 shadow-sm hover:shadow-md transition-all cursor-pointer ${task.status === "completed" ? "opacity-60" : ""}`}
     >
       <div className="flex gap-4">
         {/* Status Checkbox */}

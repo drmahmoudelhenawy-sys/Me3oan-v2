@@ -11,10 +11,6 @@ export default defineConfig(({ mode }) => {
         hmr: true,
       },
       plugins: [react()],
-      build: {
-        target: 'es2015',
-        cssTarget: 'chrome61', // Better CSS compatibility
-      },
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)

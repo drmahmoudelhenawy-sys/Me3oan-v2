@@ -319,22 +319,6 @@ export default function DepartmentReports({ user, userProfile, departments, tele
 
   const isSuperAdmin = user.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
 
-  // Auto-select department if user has only one or is assigned to one
-  useEffect(() => {
-      if (!selectedDept) {
-          // If the user has a specific departmentId in their profile and isn't Super Admin, auto-select it
-          if (!isSuperAdmin && userProfile?.departmentId) {
-              if (departments.some(d => d.id === userProfile.departmentId)) {
-                  setSelectedDept(userProfile.departmentId);
-              }
-          } 
-          // Fallback: If only one department exists overall
-          else if (departments.length === 1) {
-              setSelectedDept(departments[0].id);
-          }
-      }
-  }, [departments, userProfile, isSuperAdmin, selectedDept]);
-
   // Reset state when changing department
   useEffect(() => {
       setIsAuthorized(false);
@@ -550,12 +534,10 @@ export default function DepartmentReports({ user, userProfile, departments, tele
           return;
       }
       if (!window.confirm("هل أنت متأكد من حفظ التقرير؟")) return;
-
       try {
           let finalManagerName = managerName || 'عضو الفريق';
           let roleLabel = currentRole === 'manager' ? "رئيس القسم" : "نائب القسم";
 
-          // 1. Save Daily Report
           await addDoc(collection(db, "department_reports"), {
               deptId: selectedDept,
               createdAt: Date.now(),
@@ -565,79 +547,72 @@ export default function DepartmentReports({ user, userProfile, departments, tele
               handledInMonthlyReport: false,
               ...reportData
           });
+          
+          // Check for monthly report (based on un-handled reports only)
+          const q = query(
+              collection(db, "department_reports"), 
+              where("deptId", "==", selectedDept),
+              where("handledInMonthlyReport", "!=", true)
+          );
+          const snapshot = await getDocs(q);
+          const count = snapshot.size;
 
-          // Clear Draft
-          localStorage.removeItem(`report_draft_${selectedDept}`);
-          setReportData({ doneText: "", futureText: "", problemsText: "", suggestionsText: "" });
+          if (count >= 4) {
+              // Get the last 4 unhandled reports
+              const unhandledReports = snapshot.docs
+                  .map(doc => ({ id: doc.id, ...doc.data() }))
+                  .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
+                  .slice(0, 4);
+              
+              const deptName = departments.find(d => d.id === selectedDept)?.name || "القسم";
+              
+              await addDoc(collection(db, "monthly_reports"), {
+                  deptId: selectedDept,
+                  createdAt: Date.now(),
+                  dateString: new Date().toLocaleDateString('ar-EG'),
+                  title: `التقرير الشهري لاجتماعات معوان - ${deptName}`,
+                  reports: unhandledReports,
+                  managerName: finalManagerName
+              });
 
-          // 2. Attempt Monthly Report Generation (in a separate try/catch to not block the main success)
-          try {
-              const q = query(
-                  collection(db, "department_reports"), 
-                  where("deptId", "==", selectedDept),
-                  where("handledInMonthlyReport", "==", false)
-              );
-              const snapshot = await getDocs(q);
-              const count = snapshot.size;
+              // Mark these 4 as handled
+              const batch = writeBatch(db);
+              unhandledReports.forEach(r => {
+                  batch.update(doc(db, "department_reports", r.id), { handledInMonthlyReport: true });
+              });
+              await batch.commit();
 
-              if (count >= 4) {
-                  // Get the last 4 unhandled reports
-                  const unhandledReports = snapshot.docs
-                      .map(doc => ({ id: doc.id, ...doc.data() }))
-                      .sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0))
-                      .slice(0, 4);
-                  
-                  const deptName = departments.find(d => d.id === selectedDept)?.name || "القسم";
-                  
-                  await addDoc(collection(db, "monthly_reports"), {
-                      deptId: selectedDept,
-                      createdAt: Date.now(),
-                      dateString: new Date().toLocaleDateString('ar-EG'),
-                      title: `التقرير الشهري لاجتماعات معوان - ${deptName}`,
-                      reports: unhandledReports,
-                      managerName: finalManagerName
-                  });
+              alert("🎉 تم إصدار التقرير الشهري بنجاح لتجميع آخر 4 تقارير جديدة!");
 
-                  // Mark these 4 as handled
-                  const batch = writeBatch(db);
-                  unhandledReports.forEach(r => {
-                      batch.update(doc(db, "department_reports", r.id), { handledInMonthlyReport: true });
-                  });
-                  await batch.commit();
+              // Notify via Telegram about Monthly Report
+              if (onSendTelegram && telegramConfig?.rules?.departments) {
+                  const rule = telegramConfig.rules.departments[selectedDept || ''];
+                  if (rule) {
+                      const bot = telegramConfig.bots?.find((b: any) => b.id === rule.botId);
+                      const botToken = bot?.token || telegramConfig.defaultBotToken;
 
-                  alert("🎉 تم إصدار التقرير الشهري بنجاح لتجميع آخر 4 تقارير جديدة!");
-
-                  // Notify via Telegram about Monthly Report
-                  if (onSendTelegram && telegramConfig?.rules?.departments) {
-                      const rule = telegramConfig.rules.departments[selectedDept || ''];
-                      if (rule) {
-                          const bot = telegramConfig.bots?.find((b: any) => b.id === rule.botId);
-                          const botToken = bot?.token || telegramConfig.defaultBotToken;
-
-                          const recipientIds = [rule.managerId, rule.deputyId].filter(Boolean);
-                          const recipientChatIds = recipientIds
+                      const deputyIds = Array.isArray(rule?.deputyIds) ? rule.deputyIds : (rule?.deputyId ? [rule.deputyId] : []);
+                      const recipientIds = [rule.managerId, ...deputyIds].filter(Boolean);
+                      const recipientChatIds = Array.from(new Set(
+                          recipientIds
                               .map((rid: string) => telegramConfig.people?.find((p: any) => p.id === rid)?.chatId)
-                              .filter(Boolean);
+                              .filter(Boolean)
+                      )) as string[];
 
-                          if (recipientChatIds.length > 0) {
-                              const msg = `📅 <b>تم إصدار التقرير الشهري</b>\n📍 القسم: ${deptName}\n👤 بواسطة: ${finalManagerName}\n\n✅ تم تجميع آخر 4 تقارير يومية في ملف واحد باجتماعات معوان.`;
-                              recipientChatIds.forEach((chatId: string) => onSendTelegram!(chatId, msg, botToken));
-                          }
+                      if (recipientChatIds.length > 0) {
+                          const msg = `📅 <b>تم إصدار التقرير الشهري</b>\n📍 القسم: ${deptName}\n👤 بواسطة: ${finalManagerName}\n\n✅ تم تجميع آخر 4 تقارير يومية في ملف واحد باجتماعات معوان.`;
+                          recipientChatIds.forEach((chatId: string) => onSendTelegram(chatId, msg, botToken));
                       }
                   }
               }
-          } catch (monthlyErr: any) {
-              console.error("Monthly report auto-generation failed:", monthlyErr);
-              // We don't alert the user here because the daily report WAS saved successfully.
           }
 
+          localStorage.removeItem(`report_draft_${selectedDept}`);
+          setReportData({ doneText: "", futureText: "", problemsText: "", suggestionsText: "" });
           alert("تم حفظ التقرير بنجاح");
           setView('history');
           setHistorySubView('daily');
-      } catch (e: any) { 
-          console.error("Save Report Primary Error:", e);
-          alert("حدث خطأ أثناء الحفظ: " + (e.message || "تعذر الاتصال بقاعدة البيانات")); 
-      }
+      } catch (e) { alert("حدث خطأ أثناء الحفظ"); }
   };
 
   const handleDeleteReport = async (reportId: string) => {
@@ -700,10 +675,13 @@ export default function DepartmentReports({ user, userProfile, departments, tele
       const bot = telegramConfig.bots?.find((b: any) => b.id === rule.botId);
       const botToken = bot?.token || telegramConfig.defaultBotToken;
 
-      const recipientIds = [rule.managerId, rule.deputyId].filter(Boolean);
-      const recipientChatIds = recipientIds
-          .map((rid: string) => telegramConfig.people?.find((p: any) => p.id === rid)?.chatId)
-          .filter(Boolean);
+      const deputyIds = Array.isArray(rule?.deputyIds) ? rule.deputyIds : (rule?.deputyId ? [rule.deputyId] : []);
+      const recipientIds = [rule.managerId, ...deputyIds].filter(Boolean);
+      const recipientChatIds = Array.from(new Set(
+          recipientIds
+              .map((rid: string) => telegramConfig.people?.find((p: any) => p.id === rid)?.chatId)
+              .filter(Boolean)
+      )) as string[];
 
       if (recipientChatIds.length === 0) {
           alert("لم يتم تحديد مستلمين لهذا القسم في لوحة الأم");

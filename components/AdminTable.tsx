@@ -9,7 +9,7 @@ import {
     MoreHorizontal, ChevronDown, GripVertical, Download, Share2, ArrowLeft,
     ArrowUpDown, ArrowUp, ArrowDown, Filter, SlidersHorizontal, LayoutGrid, CheckCircle2, Clock, AlertCircle, Maximize2, Minimize2
 } from "lucide-react";
-import { utils, writeFile } from "xlsx";
+import { exportCsv } from "../utils/csvExport";
 
 interface AdminTableProps {
   user: User;
@@ -501,8 +501,7 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
     // Export
     const handleExport = () => {
         const data = rows.map(r => { const f: any = {}; columns.forEach(c => f[c.label] = r[c.id] || ""); return f; });
-        const wb = utils.book_new(); utils.book_append_sheet(wb, utils.json_to_sheet(data), "Sheet");
-        writeFile(wb, `admin_${new Date().toISOString().split('T')[0]}.xlsx`);
+        exportCsv(data, `admin_${new Date().toISOString().split('T')[0]}.csv`);
     };
     const handleBackup = () => {
         const a = document.createElement('a');
