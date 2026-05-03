@@ -763,10 +763,10 @@ export default function DepartmentReports({ user, userProfile, departments, tele
       const btnText = isRegistering ? "حفظ البيانات" : "دخول";
 
       return (
-          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-md">
-            <div className="max-w-md w-full bg-white dark:bg-gray-900 rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh] animate-fade-in-up">
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-md">
+            <div className="max-w-md w-full bg-white dark:bg-gray-900 rounded-3xl shadow-2xl overflow-hidden max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] animate-fade-in-up flex flex-col">
                 {/* Gradient Header */}
-                <div className={`relative p-6 pb-14 overflow-hidden ${authRole === 'manager' ? 'bg-gradient-to-br from-indigo-600 to-purple-700' : 'bg-gradient-to-br from-blue-600 to-cyan-700'}`}>
+                <div className={`relative p-6 pb-8 overflow-hidden shrink-0 ${authRole === 'manager' ? 'bg-gradient-to-br from-indigo-600 to-purple-700' : 'bg-gradient-to-br from-blue-600 to-cyan-700'}`}>
                     <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"/>
                     <button onClick={() => setShowLogin(false)} className="absolute top-4 left-4 w-8 h-8 bg-white/20 hover:bg-white/30 flex items-center justify-center rounded-full transition text-white">
                         <X size={16}/>
@@ -780,7 +780,7 @@ export default function DepartmentReports({ user, userProfile, departments, tele
                     </div>
                 </div>
 
-                <div className="-mt-8 mx-4 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 border border-gray-100 dark:border-gray-700">
+                <div className="mx-4 my-4 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-800 custom-scrollbar">
                     {/* Role Switcher */}
                     <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl mb-5">
                         <button onClick={() => setAuthRole('manager')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${authRole === 'manager' ? 'bg-white dark:bg-gray-600 shadow text-indigo-600 dark:text-white' : 'text-gray-500'}`}><Crown size={14}/> {selectedDept === 'hr' ? 'المدير العام' : 'رئيس القسم'}</button>

@@ -751,13 +751,13 @@ export default function IdentitySystem({ user, userProfile, isPublicView = false
 
                     {/* --- EDIT SUBJECT MODAL --- */}
                     {editingSubject && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-                            <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-2xl border border-gray-200 dark:border-slate-700">
-                                <div className="p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+                            <div className="bg-white dark:bg-slate-900 rounded-3xl w-full max-w-lg max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] overflow-hidden shadow-2xl border border-gray-200 dark:border-slate-700 flex flex-col">
+                                <div className="shrink-0 p-6 border-b border-gray-100 dark:border-slate-800 flex justify-between items-center">
                                     <h3 className="text-xl font-bold text-gray-800 dark:text-white">تعديل المادة</h3>
                                     <button onClick={() => setEditingSubject(null)} className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-full transition"><X size={20}/></button>
                                 </div>
-                                <div className="p-6 space-y-4">
+                                <div className="min-h-0 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                                     <input 
                                         className="w-full bg-gray-50 dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded-xl p-3 text-sm text-gray-800 dark:text-white focus:border-indigo-500 outline-none" 
                                         placeholder="Subject Name" 

@@ -177,16 +177,16 @@ export default function OrgStructureSystem() {
 
             {/* ── Edit Modal ── */}
             {editingDept && (
-                <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setEditingDept(null)}>
+                <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm p-0 sm:p-4" onClick={() => setEditingDept(null)}>
                     <div
-                        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl"
+                        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl overflow-hidden shadow-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col"
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Modal Header */}
                         {(() => {
                             const dept = DEPARTMENTS.find(d => d.id === editingDept);
                             return (
-                                <div className={`relative bg-gradient-to-r from-indigo-600 to-violet-700 p-5 pb-8 overflow-hidden`}>
+                                <div className={`relative bg-gradient-to-r from-indigo-600 to-violet-700 p-5 pb-6 overflow-hidden shrink-0`}>
                                     <div className="absolute -top-4 -right-4 w-20 h-20 bg-white/10 rounded-full blur-xl pointer-events-none"/>
                                     <div className="w-8 h-1 bg-white/30 rounded-full mx-auto mb-3 sm:hidden"/>
                                     <div className="flex items-center justify-between relative z-10">
@@ -212,7 +212,7 @@ export default function OrgStructureSystem() {
                         })()}
 
                         {/* Modal Body */}
-                        <div className="bg-white dark:bg-gray-800 -mt-4 rounded-t-3xl pt-6 px-5 pb-6 space-y-4">
+                        <div className="min-h-0 overflow-y-auto bg-white dark:bg-gray-800 pt-5 px-5 pb-6 space-y-4 custom-scrollbar">
                             {/* Managers */}
                             <div>
                                 <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-2">الرئيس / المدير</label>

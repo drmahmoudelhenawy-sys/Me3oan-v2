@@ -179,8 +179,8 @@ export const UserManagementModal = ({ show, onClose }: any) => {
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[200] flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 w-full max-w-4xl rounded-[2rem] shadow-2xl flex flex-col max-h-[85vh] animate-fade-in-up">
-                <div className="p-6 border-b dark:border-gray-700 flex justify-between items-center">
+            <div className="bg-white dark:bg-gray-800 w-full max-w-4xl rounded-[2rem] shadow-2xl flex flex-col max-h-[calc(100dvh-2rem)] animate-fade-in-up overflow-hidden">
+                <div className="shrink-0 p-6 border-b dark:border-gray-700 flex justify-between items-center">
                     <div className="flex items-center gap-4">
                         <h3 className="font-bold text-xl text-gray-800 dark:text-white flex items-center gap-2"><Users size={24} className="text-indigo-600"/> إدارة المستخدمين</h3>
                         <button onClick={() => setShowAddUser(true)} className="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 hover:bg-indigo-700 transition">
@@ -190,7 +190,7 @@ export const UserManagementModal = ({ show, onClose }: any) => {
                     <button onClick={onClose}><X size={20} className="text-gray-400 hover:text-red-500"/></button>
                 </div>
                 
-                <div className="p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                <div className="shrink-0 p-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
                     <div className="relative">
                         <Search className="absolute right-3 top-3 text-gray-400" size={18} />
                         <input 
@@ -323,10 +323,10 @@ export const SettingsModal = ({
     const currentRole = [...USER_ROLES, ...CHARITY_ROLES].find(r => r.id === userProfile?.role)?.name || 'عضو';
 
     return (
-        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-md" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh] animate-fade-in-up" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-3 sm:p-4 backdrop-blur-md" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-900 w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] animate-fade-in-up flex flex-col" onClick={e => e.stopPropagation()}>
                 {/* Gradient Header */}
-                <div className="relative bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 p-6 pb-14 overflow-hidden">
+                <div className="relative bg-gradient-to-br from-indigo-600 via-indigo-700 to-purple-700 p-6 pb-8 overflow-hidden shrink-0">
                     <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-2xl pointer-events-none"/>
                     <button onClick={onClose} className="absolute top-4 left-4 w-8 h-8 bg-white/20 hover:bg-white/30 flex items-center justify-center rounded-full transition text-white">
                         <X size={16}/>
@@ -341,7 +341,7 @@ export const SettingsModal = ({
                 </div>
 
                 {/* Body */}
-                <div className="-mt-8 mx-4 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 border border-gray-100 dark:border-gray-700">
+                <div className="mx-4 my-4 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-800 custom-scrollbar">
                     <form onSubmit={handleUpdateProfile} className="space-y-4">
                         <div>
                             <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1.5">الاسم المعروض</label>
@@ -565,17 +565,17 @@ export const ForwardTaskModal = ({
     if (!modalState.isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-md p-4" onClick={() => setModalState({ isOpen: false, task: null, targetDept: '' })}>
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-md p-3 sm:p-4" onClick={() => setModalState({ isOpen: false, task: null, targetDept: '' })}>
             <motion.div
                 initial={{ opacity: 0, scale: 0.9, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.9, y: 20 }}
-                className="w-full md:max-w-lg bg-white dark:bg-gray-800 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col max-h-[95vh] border border-white/20"
+                className="w-full md:max-w-lg bg-white dark:bg-gray-800 rounded-[2rem] md:rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden flex flex-col max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] border border-white/20"
                 onClick={e => e.stopPropagation()}
                 dir="rtl"
             >
                 {/* ── Premium High Header ── */}
-                <div className={`relative bg-gradient-to-br ${urg.grad} p-6 pb-20 overflow-hidden shrink-0 transition-all duration-700`}>
+                <div className={`relative bg-gradient-to-br ${urg.grad} p-5 sm:p-6 overflow-hidden shrink-0 transition-all duration-700`}>
                     <div className="absolute top-0 right-0 w-64 h-64 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl pointer-events-none animate-pulse-slow"/>
                     <div className="absolute bottom-0 left-0 w-48 h-48 bg-black/10 rounded-full translate-y-1/2 -translate-x-1/2 blur-2xl pointer-events-none"/>
                     
@@ -603,8 +603,8 @@ export const ForwardTaskModal = ({
                 </div>
 
                 {/* ── Floating Body Card ── */}
-                <div className="-mt-14 mx-4 flex-1 overflow-y-auto custom-scrollbar pt-2 px-1">
-                    <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-[2rem] shadow-2xl border border-white/50 dark:border-gray-800 p-6 space-y-6">
+                <div className="mx-4 my-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar px-1">
+                    <div className="bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-[2rem] shadow-xl border border-white/50 dark:border-gray-800 p-5 sm:p-6 space-y-6">
 
                         {/* Task Preview (Minified) */}
                         <div className={`p-4 rounded-2xl bg-gray-50 dark:bg-gray-800/50 border-2 border-dashed border-gray-100 dark:border-gray-700 relative group`}>
@@ -759,11 +759,20 @@ export const CreateEventModal = ({
         return `${mins} دقيقة`;
     };
 
+    const updateEventDate = (date: string) => {
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const nextEvent = { ...newEvent, date };
+        if (newEvent.isRecurring && date) {
+            nextEvent.recurrenceDay = dayNames[new Date(`${date}T00:00:00`).getDay()];
+        }
+        setNewEvent(nextEvent);
+    };
+
     return (
-        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-4 backdrop-blur-md animate-fade-in">
-            <div className="bg-white dark:bg-gray-850 w-full max-w-lg rounded-[2.5rem] shadow-2xl animate-fade-in-up max-h-[92vh] overflow-hidden flex flex-col border border-white/20 dark:border-gray-700/50">
+        <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-3 sm:p-4 backdrop-blur-md animate-fade-in">
+            <div className="bg-white dark:bg-gray-850 w-full max-w-lg rounded-[2rem] sm:rounded-[2.5rem] shadow-2xl animate-fade-in-up max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col border border-white/20 dark:border-gray-700/50">
                 {/* Modern Header */}
-                <div className="relative p-8 pb-6 overflow-hidden shrink-0">
+                <div className="relative p-5 sm:p-8 sm:pb-6 overflow-hidden shrink-0">
                     <div className="absolute top-0 right-0 w-full h-full bg-gradient-to-br from-indigo-600/10 to-purple-600/10 dark:from-indigo-500/5 dark:to-transparent -z-10"></div>
                     <div className="flex justify-between items-center relative">
                         <div className="flex items-center gap-4">
@@ -786,7 +795,7 @@ export const CreateEventModal = ({
                     </div>
                 </div>
 
-                <form onSubmit={handleCreateEvent} className="flex-1 overflow-y-auto p-8 pt-2 custom-scrollbar space-y-8">
+                <form onSubmit={handleCreateEvent} className="min-h-0 flex-1 overflow-y-auto p-5 pt-2 sm:p-8 sm:pt-2 custom-scrollbar space-y-8">
                     {/* Section 1: Basic Info */}
                     <div className="space-y-6">
                         <div className="group">
@@ -824,6 +833,21 @@ export const CreateEventModal = ({
                             </label>
                         </div>
                     </div>
+
+                    {newEvent.isRecurring && (
+                        <div className="space-y-3 rounded-3xl border border-indigo-100 bg-indigo-50/60 p-4 dark:border-indigo-900/40 dark:bg-indigo-900/10">
+                            <label className="flex items-center gap-2 text-xs font-black text-indigo-600 dark:text-indigo-300 uppercase tracking-widest pl-1">
+                                <Calendar size={14} /> تاريخ أول اجتماع ثابت
+                            </label>
+                            <input
+                                type="date"
+                                required
+                                className="w-full p-4 bg-white dark:bg-gray-900 rounded-2xl border-2 border-transparent focus:border-indigo-500 dark:text-white font-bold text-sm outline-none shadow-sm transition-all"
+                                value={newEvent.date}
+                                onChange={(e: any) => updateEventDate(e.target.value)}
+                            />
+                        </div>
+                    )}
 
                     {/* Section 2: Date & Time */}
                     <div className="grid grid-cols-2 gap-5 pt-2">
@@ -1111,8 +1135,8 @@ export const TelegramConfigModal = ({ isOpen, onClose, config, onSave, departmen
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[201] flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl" onClick={(e) => e.stopPropagation()}>
-                <div className="p-6 border-b border-gray-100 dark:border-gray-700">
+            <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl max-h-[calc(100dvh-2rem)] flex flex-col shadow-2xl overflow-hidden" onClick={(e) => e.stopPropagation()}>
+                <div className="shrink-0 p-6 border-b border-gray-100 dark:border-gray-700">
                     <div className="flex justify-between items-center">
                         <h3 className="font-bold text-2xl flex items-center gap-3"><MessageCircle className="text-blue-500"/> إعدادات Telegram المتقدمة</h3>
                         <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><X/></button>

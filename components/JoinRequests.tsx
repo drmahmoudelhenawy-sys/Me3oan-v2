@@ -195,13 +195,13 @@ export default function JoinRequests({ user, userProfile }: JoinRequestsProps) {
             </div>
 
             {selectedSubmission && (
-                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-fade-in" onClick={() => setSelectedSubmission(null)}>
-                    <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto p-8 space-y-6" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex justify-between items-center">
+                 <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-3 sm:p-4 animate-fade-in" onClick={() => setSelectedSubmission(null)}>
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+                        <div className="shrink-0 flex justify-between items-center p-6 sm:p-8 pb-4">
                             <h3 className="font-bold text-2xl">تفاصيل الطلب</h3>
                             <button onClick={() => setSelectedSubmission(null)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><X/></button>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                        <div className="min-h-0 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-6 text-sm p-6 sm:p-8 pt-0 custom-scrollbar">
                             <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><Users className="text-indigo-500" size={20}/><div><p className="font-bold">الاسم</p><p>{selectedSubmission.name}</p></div></div>
                             <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><Mail className="text-indigo-500" size={20}/><div><p className="font-bold">البريد</p><p>{selectedSubmission.email}</p></div></div>
                             <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><Phone className="text-indigo-500" size={20}/><div><p className="font-bold">الهاتف</p><p>{selectedSubmission.phone}</p></div></div>

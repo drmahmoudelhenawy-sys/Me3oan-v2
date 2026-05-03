@@ -681,10 +681,10 @@ export default function WamanAhyaahaSystem({
 
             {/* Settings Modal */}
             {showSettings && (
-                <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-4 backdrop-blur-md">
-                    <div className="bg-white dark:bg-gray-900 w-full max-w-md rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh] animate-fade-in-up">
+                <div className="fixed inset-0 bg-black/60 z-[100] flex items-center justify-center p-3 sm:p-4 backdrop-blur-md">
+                    <div className="bg-white dark:bg-gray-900 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] animate-fade-in-up flex flex-col">
                         {/* Modal Header */}
-                        <div className="relative bg-gradient-to-br from-red-600 to-rose-700 p-5 pb-12 overflow-hidden">
+                        <div className="relative bg-gradient-to-br from-red-600 to-rose-700 p-5 pb-8 overflow-hidden shrink-0">
                             <div className="absolute -top-8 -left-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"/>
                             <button onClick={() => setShowSettings(false)} className="absolute top-4 left-4 w-7 h-7 bg-white/20 hover:bg-white/30 flex items-center justify-center rounded-full text-white transition"><X size={14}/></button>
                             <div className="text-center">
@@ -693,7 +693,7 @@ export default function WamanAhyaahaSystem({
                                 <p className="text-red-200 text-xs mt-0.5">إدارة مستقبلي التنبيهات</p>
                             </div>
                         </div>
-                        <div className="-mt-7 mx-4 mb-4 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 border border-gray-100 dark:border-gray-700 space-y-4">
+                        <div className="mx-4 my-4 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-800 space-y-4 custom-scrollbar">
                             <div className="flex bg-gray-100 dark:bg-gray-700 p-1 rounded-xl">
                                 <button onClick={() => setActiveConfigTab('donors')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${activeConfigTab === 'donors' ? 'bg-white dark:bg-gray-600 shadow text-red-600' : 'text-gray-500'}`}>🩸 متبرعون</button>
                                 <button onClick={() => setActiveConfigTab('distress')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${activeConfigTab === 'distress' ? 'bg-white dark:bg-gray-600 shadow text-red-600' : 'text-gray-500'}`}>🆘 استغاثات</button>
@@ -736,10 +736,10 @@ export default function WamanAhyaahaSystem({
 
                         {/* Request Form Modal */}
                         {showForm && (
-                            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center" onClick={() => setShowForm(false)}>
-                                <div className="bg-white dark:bg-gray-900 w-full md:max-w-lg rounded-t-3xl md:rounded-3xl overflow-y-auto max-h-[90vh] shadow-2xl animate-fade-in-up" onClick={e => e.stopPropagation()}>
+                            <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-end md:items-center justify-center md:p-4" onClick={() => setShowForm(false)}>
+                                <div className="bg-white dark:bg-gray-900 w-full md:max-w-lg rounded-t-3xl md:rounded-3xl overflow-hidden max-h-[calc(100dvh-1rem)] md:max-h-[calc(100dvh-2rem)] shadow-2xl animate-fade-in-up flex flex-col" onClick={e => e.stopPropagation()}>
                                     {/* Modal Header */}
-                                    <div className="relative bg-gradient-to-br from-red-600 to-rose-700 p-5 pb-12 overflow-hidden">
+                                    <div className="relative bg-gradient-to-br from-red-600 to-rose-700 p-5 pb-8 overflow-hidden shrink-0">
                                         <div className="absolute -top-8 -left-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"/>
                                         <button onClick={() => setShowForm(false)} className="absolute top-4 left-4 w-7 h-7 bg-white/20 hover:bg-white/30 flex items-center justify-center rounded-full text-white transition"><X size={14}/></button>
                                         <div className="text-center">
@@ -748,7 +748,7 @@ export default function WamanAhyaahaSystem({
                                             <p className="text-red-200 text-xs mt-0.5">أدخل بيانات الحالة</p>
                                         </div>
                                     </div>
-                                    <div className="-mt-7 mx-4 mb-4 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-5 border border-gray-100 dark:border-gray-700">
+                                    <div className="mx-4 my-4 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-5 shadow-xl dark:border-gray-700 dark:bg-gray-800 custom-scrollbar">
                                         <form onSubmit={handleAddRequest} className="space-y-3">
                                             <input required className="w-full p-3 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 dark:text-white rounded-xl text-sm outline-none focus:ring-2 focus:ring-red-500" placeholder="اسم المريض *" value={requestForm.patientName} onChange={e => setRequestForm({...requestForm, patientName: e.target.value})}/>
                                             

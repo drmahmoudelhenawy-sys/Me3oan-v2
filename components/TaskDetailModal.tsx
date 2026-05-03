@@ -57,13 +57,13 @@ const TaskDetailModal = ({ task, user, userProfile, onClose }: any) => {
 
   return (
     <div className="fixed inset-0 bg-black/50 z-[100] flex items-end md:items-center justify-center p-0 md:p-4 backdrop-blur-sm" onClick={onClose}>
-      <div className="bg-white dark:bg-gray-800 w-full md:max-w-lg rounded-t-3xl md:rounded-3xl shadow-2xl flex flex-col h-[85vh] md:h-auto md:max-h-[85vh] animate-fade-in-up" onClick={e => e.stopPropagation()}>
+      <div className="bg-white dark:bg-gray-800 w-full md:max-w-lg rounded-t-3xl md:rounded-3xl shadow-2xl flex flex-col max-h-[calc(100dvh-1rem)] h-[min(85dvh,calc(100dvh-1rem))] md:h-auto md:max-h-[calc(100dvh-2rem)] animate-fade-in-up" onClick={e => e.stopPropagation()}>
         
         {/* Mobile Drag Handle */}
         <div className="w-12 h-1.5 bg-gray-200 dark:bg-gray-700 rounded-full mx-auto mt-4 mb-2 md:hidden"></div>
 
         {/* Header */}
-        <div className="p-6 border-b dark:border-gray-700 flex justify-between items-start bg-gray-50 dark:bg-gray-900 rounded-t-3xl">
+        <div className="shrink-0 p-6 border-b dark:border-gray-700 flex justify-between items-start bg-gray-50 dark:bg-gray-900 rounded-t-3xl">
             <div className="flex-1">
                 {isEditing ? (
                     <input 
@@ -90,7 +90,7 @@ const TaskDetailModal = ({ task, user, userProfile, onClose }: any) => {
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto flex-1 custom-scrollbar space-y-6">
+        <div className="min-h-0 p-6 overflow-y-auto flex-1 custom-scrollbar space-y-6">
             
             {/* Color Picker (Only in Edit Mode) */}
             {isEditing && (

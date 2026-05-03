@@ -177,11 +177,11 @@ const ColumnSettings = ({ col, onClose, onSave, onDelete }: {
     };
 
     return (
-        <div className="fixed inset-0 z-[400] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" onClick={onClose}>
-            <div className="bg-white dark:bg-gray-900 w-[340px] rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh] animate-fade-in-up" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-[400] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-md" onClick={onClose}>
+            <div className="bg-white dark:bg-gray-900 w-full max-w-[340px] rounded-3xl shadow-2xl overflow-hidden max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] animate-fade-in-up flex flex-col" onClick={e => e.stopPropagation()}>
 
                 {/* ── Gradient Header ── */}
-                <div className={`relative bg-gradient-to-br ${meta.grad} p-5 pb-12 overflow-hidden`}>
+                <div className={`relative bg-gradient-to-br ${meta.grad} p-5 pb-8 overflow-hidden shrink-0`}>
                     <div className="absolute -top-8 -left-8 w-36 h-36 bg-white/10 rounded-full blur-2xl pointer-events-none"/>
                     <button
                         onClick={onClose}
@@ -199,7 +199,7 @@ const ColumnSettings = ({ col, onClose, onSave, onDelete }: {
                 </div>
 
                 {/* ── Body Card ── */}
-                <div className="-mt-7 mx-4 bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-4 border border-gray-100 dark:border-gray-700 space-y-3.5">
+                <div className="mx-4 my-4 overflow-y-auto rounded-2xl border border-gray-100 bg-white p-4 shadow-xl dark:border-gray-700 dark:bg-gray-800 space-y-3.5 custom-scrollbar">
 
                     {/* Column Name */}
                     <div>
@@ -521,7 +521,7 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
             {mobileEditRow && (
                 <div className="fixed inset-0 z-[400] flex items-end md:hidden" onClick={() => setMobileEditRow(null)}>
                     <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"/>
-                    <div className="relative w-full bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                    <div className="relative w-full bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl max-h-[calc(100dvh-1rem)] flex flex-col" onClick={e => e.stopPropagation()}>
                         {/* Drag Handle */}
                         <div className="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mt-3 shrink-0"/>
                         {/* Header */}
@@ -605,10 +605,10 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
             )}
 
             {forwardingRowId && (
-                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/60 backdrop-blur-md" onClick={() => setForwardingRowId(null)}>
-                    <div className="bg-white dark:bg-gray-900 w-72 rounded-3xl shadow-2xl overflow-y-auto max-h-[90vh] animate-fade-in-up" onClick={e => e.stopPropagation()}>
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-md" onClick={() => setForwardingRowId(null)}>
+                    <div className="bg-white dark:bg-gray-900 w-full max-w-72 rounded-3xl shadow-2xl overflow-hidden max-h-[calc(100dvh-1.5rem)] sm:max-h-[calc(100dvh-2rem)] animate-fade-in-up flex flex-col" onClick={e => e.stopPropagation()}>
                         {/* Header */}
-                        <div className="relative bg-gradient-to-br from-blue-600 to-indigo-700 p-5 pb-12 overflow-hidden">
+                        <div className="relative bg-gradient-to-br from-blue-600 to-indigo-700 p-5 pb-8 overflow-hidden shrink-0">
                             <div className="absolute -top-8 -left-8 w-32 h-32 bg-white/10 rounded-full blur-2xl"/>
                             <button onClick={() => setForwardingRowId(null)} className="absolute top-3.5 left-3.5 w-7 h-7 bg-white/20 hover:bg-white/35 flex items-center justify-center rounded-full transition text-white">
                                 <X size={14}/>
@@ -622,7 +622,7 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
                             </div>
                         </div>
                         {/* Body */}
-                        <div className="-mt-6 mx-3 mb-3 bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
+                        <div className="mx-3 my-3 bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden min-h-0">
                             <div className="max-h-64 overflow-y-auto custom-scrollbar divide-y divide-gray-50 dark:divide-gray-700/50">
                                 {DEPARTMENTS.map(dept => (
                                     <button

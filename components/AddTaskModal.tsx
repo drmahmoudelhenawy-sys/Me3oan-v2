@@ -152,7 +152,7 @@ export default function AddTaskModal({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 40 }}
             transition={{ type: "spring", damping: 24, stiffness: 280 }}
-            className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-900 md:rounded-3xl"
+            className="flex max-h-[calc(100dvh-1rem)] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl dark:bg-gray-900 md:max-h-[calc(100dvh-2rem)] md:rounded-3xl"
             onClick={(event) => event.stopPropagation()}
           >
             <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">

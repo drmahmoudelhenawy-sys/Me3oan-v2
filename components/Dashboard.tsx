@@ -49,6 +49,29 @@ import toast, { Toaster } from 'react-hot-toast';
 
 const DEFAULT_MEETING_REMINDERS = [2880, 1440, 60, 30];
 
+const normalizeMeetingReminders = (reminders?: number[]) =>
+  Array.from(new Set((reminders || DEFAULT_MEETING_REMINDERS).map(Number).filter((value) => value > 0)))
+    .sort((a, b) => b - a);
+
+const getDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getReminderKey = (occurrence: Date, reminderMinutes: number) => {
+  const hours = String(occurrence.getHours()).padStart(2, "0");
+  const minutes = String(occurrence.getMinutes()).padStart(2, "0");
+  return `${getDateKey(occurrence)}T${hours}:${minutes}|${reminderMinutes}`;
+};
+
+const formatReminderLead = (minutes: number) => {
+  if (minutes % 1440 === 0) return `${minutes / 1440} يوم`;
+  if (minutes % 60 === 0) return `${minutes / 60} ساعة`;
+  return `${minutes} دقيقة`;
+};
+
 // New Interfaces for Telegram Configuration
 interface TelegramContact {
   name: string;
@@ -469,52 +492,59 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                           nextOccurrence.setDate(nextOccurrence.getDate() + 7);
                       }
 
+                      if (data.date) {
+                          const startOccurrence = new Date(`${data.date}T${data.time}`);
+                          while (nextOccurrence < startOccurrence) {
+                              nextOccurrence.setDate(nextOccurrence.getDate() + 7);
+                          }
+                      }
+
                       const diffMs = nextOccurrence.getTime() - now.getTime();
                       const diffMins = diffMs / (1000 * 60);
                       
-                      // Check if already sent for this specific date
-                      const todayStr = now.toISOString().split('T')[0];
-                      if (data.lastReminderSentDate === todayStr) return;
+                      const reminders = normalizeMeetingReminders(data.notificationSettings?.reminders);
+                      const matchingReminder = reminders.find((r: number) => diffMins >= 0 && Math.abs(diffMins - r) <= 2);
+                      if (!matchingReminder) return;
 
-                      // Check configured reminders
-                      const reminders = data.notificationSettings?.reminders || [30]; // Default 30 mins
-                      // Check if ANY reminder matches current diffMins (within 2 min margin)
-                      const shouldSend = reminders.some((r: number) => Math.abs(diffMins - r) <= 2);
+                      const reminderKey = getReminderKey(nextOccurrence, matchingReminder);
+                      const sentReminders = Array.isArray(data.sentReminders) ? data.sentReminders : [];
+                      if (sentReminders.includes(reminderKey)) return;
 
-                      if (shouldSend) {
-                          let msg = `⏰ <b>تذكير اجتماع متكرر</b> (خلال ${Math.ceil(diffMins)} دقيقة)\n\n📌 <b>${data.topic}</b>\n🔄 <b>يتكرر:</b> ${data.recurrenceDay}\n🕒 <b>الساعة:</b> ${data.time}\n📅 <b>تاريخ اليوم:</b> ${now.toLocaleDateString('ar-EG')}\n`;
+                      if (matchingReminder) {
+                          let msg = `⏰ <b>تذكير اجتماع متكرر</b> (قبل ${formatReminderLead(matchingReminder)})\n\n📌 <b>${data.topic}</b>\n🔄 <b>يتكرر:</b> ${data.recurrenceDay}\n📅 <b>تاريخ الاجتماع:</b> ${getDateKey(nextOccurrence)}\n🕒 <b>الساعة:</b> ${data.time}\n`;
                           if (data.locationType === 'online') msg += `🔗 <b>الرابط:</b> ${data.link}`; 
                           else msg += `📍 <b>المكان:</b> ${data.details}`;
                           sendToAllDeptLeadership(msg);
-                          await updateDoc(doc(db, "management_meetings", docSnap.id), { lastReminderSentDate: todayStr });
+                          await updateDoc(doc(db, "management_meetings", docSnap.id), {
+                              sentReminders: arrayUnion(reminderKey),
+                              lastReminderSentAt: serverTimestamp()
+                          });
                           console.log("Auto-reminder sent for recurring", data.topic);
                       }
                   } 
                   // B. One-time Events Logic
-                  else if (!data.isRecurring && !data.reminderSent && data.date && data.time) {
+                  else if (!data.isRecurring && data.date && data.time) {
                       const eventTime = new Date(`${data.date}T${data.time}`);
                       const diffMs = eventTime.getTime() - now.getTime();
                       const diffMins = diffMs / (1000 * 60);
                       
-                      const reminders = data.notificationSettings?.reminders || [30];
-                      // For one-time, we can just check if we are closer than the largest reminder?
-                      // Or strictly follow the reminder schedule.
-                      // The previous logic was: if diffMins <= triggerOffset.
-                      // Let's stick to the new "reminders array" logic if available, else fallback.
-                      
-                      // If using new array logic:
-                      const shouldSend = reminders.some((r: number) => Math.abs(diffMins - r) <= 2);
-                      
-                      // Fallback to old logic if no array (legacy support)
-                      const triggerOffset = data.notificationSettings?.reminderOffset || 30;
-                      const legacyShouldSend = (diffMins <= triggerOffset && diffMins > -30);
+                      const reminders = normalizeMeetingReminders(data.notificationSettings?.reminders);
+                      const matchingReminder = reminders.find((r: number) => diffMins >= 0 && Math.abs(diffMins - r) <= 2);
+                      if (!matchingReminder) return;
 
-                      if (shouldSend || legacyShouldSend) {
-                          let msg = `⏰ <b>تذكير اجتماع</b> (خلال ${Math.ceil(diffMins)} دقيقة)\n\n📌 <b>${data.topic}</b>\n📅 <b>التاريخ:</b> ${data.date}\n🕒 <b>الساعة:</b> ${data.time}\n`;
+                      const reminderKey = getReminderKey(eventTime, matchingReminder);
+                      const sentReminders = Array.isArray(data.sentReminders) ? data.sentReminders : [];
+                      if (sentReminders.includes(reminderKey)) return;
+
+                      if (matchingReminder) {
+                          let msg = `⏰ <b>تذكير اجتماع</b> (قبل ${formatReminderLead(matchingReminder)})\n\n📌 <b>${data.topic}</b>\n📅 <b>التاريخ:</b> ${data.date}\n🕒 <b>الساعة:</b> ${data.time}\n`;
                           if (data.locationType === 'online') msg += `🔗 <b>الرابط:</b> ${data.link}`; 
                           else msg += `📍 <b>المكان:</b> ${data.details}`;
                           sendToAllDeptLeadership(msg);
-                          await updateDoc(doc(db, "management_meetings", docSnap.id), { reminderSent: true });
+                          await updateDoc(doc(db, "management_meetings", docSnap.id), {
+                              sentReminders: arrayUnion(reminderKey),
+                              lastReminderSentAt: serverTimestamp()
+                          });
                           console.log("Auto-reminder sent for", data.topic);
                       }
                   }
@@ -1086,32 +1116,37 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
   const handleCreateEvent = async (e: React.FormEvent) => {
       e.preventDefault();
       try {
+          const notificationSettings = {
+              ...newEvent.notificationSettings,
+              reminders: normalizeMeetingReminders(newEvent.notificationSettings?.reminders)
+          };
+
           if (newEvent.id) {
               // UPDATE Existing Event
               await updateDoc(doc(db, "management_meetings", newEvent.id), {
                   topic: newEvent.title,
-                  date: newEvent.isRecurring ? '' : newEvent.date,
+                  date: newEvent.date,
                   time: newEvent.time,
                   isRecurring: newEvent.isRecurring || false,
                   recurrenceDay: newEvent.isRecurring ? newEvent.recurrenceDay : null,
                   locationType: newEvent.type,
                   link: newEvent.link,
                   details: newEvent.details,
-                  notificationSettings: newEvent.notificationSettings
+                  notificationSettings
               });
               alert("تم تحديث الإعلان بنجاح");
           } else {
               // CREATE New Event
               const docRef = await addDoc(collection(db, "management_meetings"), {
                   topic: newEvent.title,
-                  date: newEvent.isRecurring ? '' : newEvent.date,
+                  date: newEvent.date,
                   time: newEvent.time,
                   isRecurring: newEvent.isRecurring || false,
                   recurrenceDay: newEvent.isRecurring ? newEvent.recurrenceDay : null,
                   locationType: newEvent.type,
                   link: newEvent.link,
                   details: newEvent.details,
-                  notificationSettings: newEvent.notificationSettings, // Store full settings including reminders
+                  notificationSettings, // Store full settings including reminders
                   createdAt: Date.now(),
                   created_by: user.email,
                   created_by_name: userProfile?.displayName,
@@ -1121,17 +1156,18 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
               });
 
               // 2. Send Telegram (Immediate Announcement)
-              if (newEvent.sendImmediateNotification && newEvent.notificationSettings.enabled && onSendTelegram) {
+              if (newEvent.sendImmediateNotification && notificationSettings.enabled && onSendTelegram) {
                   let msg = `📣 <b>إعلان اجتماع</b> — يُرسل لرؤساء الأقسام والنواب\n\n📢 <b>${newEvent.title}</b>\n\n`;
-                  if (newEvent.notificationSettings.includeTime) {
+                  if (notificationSettings.includeTime) {
                       if (newEvent.isRecurring) {
                           msg += `🔄 <b>يتكرر كل:</b> ${newEvent.recurrenceDay}\n🕒 <b>الساعة:</b> ${newEvent.time}\n`;
+                          if (newEvent.date) msg += `📅 <b>بداية من:</b> ${newEvent.date}\n`;
                       } else {
                           msg += `📅 ${newEvent.date} - 🕒 ${newEvent.time}\n`;
                       }
                   }
-                  if (newEvent.notificationSettings.includeLocation) msg += newEvent.type === 'online' ? `🔗 رابط: ${newEvent.link}\n` : `📍 مكان: ${newEvent.details}\n`;
-                  if (newEvent.notificationSettings.includeDetails && newEvent.details && newEvent.type !== 'online') msg += `📝 تفاصيل: ${newEvent.details}\n`;
+                  if (notificationSettings.includeLocation) msg += newEvent.type === 'online' ? `🔗 رابط: ${newEvent.link}\n` : `📍 مكان: ${newEvent.details}\n`;
+                  if (notificationSettings.includeDetails && newEvent.details && newEvent.type !== 'online') msg += `📝 تفاصيل: ${newEvent.details}\n`;
                   
                   // Add Confirmation Link
                   const confirmLink = `${window.location.origin}?confirmEvent=${docRef.id}`;
@@ -1146,7 +1182,8 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
           setNewEvent({ 
               id: "", title: "", date: "", time: "", type: "offline", link: "", details: "", 
               isRecurring: false, recurrenceDay: 'Thursday',
-              notificationSettings: { enabled: true, includeTime: true, includeLocation: true, includeDetails: true, reminders: [1440, 60] } 
+              notificationSettings: { enabled: true, includeTime: true, includeLocation: true, includeDetails: true, reminders: DEFAULT_MEETING_REMINDERS },
+              sendImmediateNotification: true
           });
       } catch (err) { console.error(err); alert("حدث خطأ"); }
   };
