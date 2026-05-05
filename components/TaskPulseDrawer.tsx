@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { DEPARTMENTS, PRIORITIES } from "../utils/constants";
 import TaskPipeline from "./TaskPipeline";
+import { resolveDepartmentLeadership, sendTelegramToChatIds } from "../utils/telegramRouting";
 
 interface TaskPulseDrawerProps {
     task: any;
@@ -18,7 +19,7 @@ interface TaskPulseDrawerProps {
     userProfile: any;
     onClose: () => void;
     telegramConfig?: any;
-    onSendTelegram?: (target: string, text: string) => void;
+    onSendTelegram?: (target: string, text: string, botToken?: string) => void;
     handleAcceptTask?: (task: any) => void;
     handleRejectTask?: (task: any, reason: string) => void;
     deptSettings?: any;
@@ -62,6 +63,7 @@ const TaskPulseDrawer = ({
         details: task.details, 
         cardColor: task.cardColor || '#ffffff' 
     });
+    const [editNote, setEditNote] = useState("");
 
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -142,11 +144,35 @@ const TaskPulseDrawer = ({
 
     const handleSaveDetails = async () => {
         try {
+            const changedParts = [
+                editedTask.title !== task.title ? "العنوان" : "",
+                editedTask.details !== task.details ? "التفاصيل" : "",
+                editedTask.cardColor !== (task.cardColor || "#ffffff") ? "لون البطاقة" : ""
+            ].filter(Boolean);
             await updateDoc(doc(db, 'tasks', task.id), {
                 title: editedTask.title,
                 details: editedTask.details,
-                cardColor: editedTask.cardColor
+                cardColor: editedTask.cardColor,
+                lastEditNote: editNote.trim(),
+                lastEditedAt: Date.now(),
+                lastEditedBy: userProfile?.displayName || user.email
             });
+            await addDoc(collection(db, "tasks", task.id, "pulse"), {
+                type: 'activity',
+                text: `تم تعديل المهمة${editNote.trim() ? `: ${editNote.trim()}` : changedParts.length ? `: ${changedParts.join("، ")}` : ""}`,
+                user: userProfile?.displayName || user.email,
+                timestamp: serverTimestamp()
+            });
+            if (onSendTelegram) {
+                const notifyDept = task.targetDept || task.sourceDept;
+                const route = resolveDepartmentLeadership(telegramConfig, notifyDept, "manager_and_deputy");
+                const editedAtText = new Date().toLocaleString('ar-EG');
+                const oldDetails = typeof task.details === "string" ? task.details : JSON.stringify(task.details || "");
+                const newDetails = typeof editedTask.details === "string" ? editedTask.details : JSON.stringify(editedTask.details || "");
+                const msg = `✏️ <b>تم تعديل مهمة</b>\n\n📌 <b>المهمة:</b> ${editedTask.title || task.title || "-"}\n🏷️ <b>القسم:</b> ${DEPARTMENTS.find(d => d.id === notifyDept)?.nameAr || notifyDept || "-"}\n👤 <b>تم التعديل بواسطة:</b> ${userProfile?.displayName || user.email}\n🕒 <b>وقت التعديل:</b> ${editedAtText}\n\n🧾 <b>ما الذي تم تعديله:</b> ${editNote.trim() || changedParts.join("، ") || "تعديل بيانات المهمة"}\n\n📋 <b>العنوان القديم:</b> ${task.title || "-"}\n📋 <b>العنوان الجديد:</b> ${editedTask.title || "-"}\n\n📄 <b>التفاصيل القديمة:</b>\n${oldDetails || "-"}\n\n📄 <b>التفاصيل الجديدة:</b>\n${newDetails || "-"}`;
+                sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
+            }
+            setEditNote("");
             setIsEditing(false);
         } catch (e) {
             console.error(e);
@@ -299,6 +325,12 @@ const TaskPulseDrawer = ({
                                         className="w-full h-40 p-4 rounded-2xl bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
                                         value={editedTask.details}
                                         onChange={e => setEditedTask({...editedTask, details: e.target.value})}
+                                    />
+                                    <textarea
+                                        className="w-full h-24 p-4 rounded-2xl bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/40 text-sm dark:text-white outline-none focus:ring-2 focus:ring-amber-500"
+                                        value={editNote}
+                                        onChange={e => setEditNote(e.target.value)}
+                                        placeholder="اكتب هنا إيه التعديل اللي حصل عشان يوصل في إشعار التليجرام..."
                                     />
                                     <button onClick={handleSaveDetails} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-indigo-200 dark:shadow-none">
                                         حفظ التعديلات

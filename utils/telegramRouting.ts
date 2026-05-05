@@ -108,6 +108,28 @@ export const resolveWamanRoute = (telegramConfig: any, noticeType: WamanNoticeTy
   };
 };
 
+export const resolveMeetingRoute = (telegramConfig: any) => {
+  const meetingRule = telegramConfig?.rules?.meetings || {};
+  const recipientIds = Array.isArray(meetingRule.attendanceRecipientIds)
+    ? meetingRule.attendanceRecipientIds
+    : (Array.isArray(meetingRule.recipientIds) ? meetingRule.recipientIds : []);
+
+  return {
+    botToken: getTelegramBotToken(telegramConfig, meetingRule.botId),
+    chatIds: resolveRecipientChatIds(telegramConfig, recipientIds)
+  };
+};
+
+export const resolveMeetingAnnouncementRoute = (telegramConfig: any) => {
+  const meetingRule = telegramConfig?.rules?.meetings || {};
+  const recipientIds = Array.isArray(meetingRule.announcementRecipientIds) ? meetingRule.announcementRecipientIds : [];
+
+  return {
+    botToken: getTelegramBotToken(telegramConfig, meetingRule.botId),
+    chatIds: resolveRecipientChatIds(telegramConfig, recipientIds)
+  };
+};
+
 export const sendTelegramToChatIds = (
   onSendTelegram: ((target: string, text: string, botToken?: string) => void) | undefined,
   chatIds: string[],

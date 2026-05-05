@@ -4,9 +4,37 @@ import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
 import { Users, Save } from "lucide-react";
 import { DEPARTMENTS, USER_ROLES, CHARITY_ROLES } from "../utils/constants";
 
+const PERMISSIONS = [
+    { key: "canManageUsers", color: "accent-indigo-600" },
+    { key: "canViewAdminTable", color: "accent-green-600" },
+    { key: "canManageOrg", color: "accent-purple-600" },
+    { key: "canEditIdentity", color: "accent-pink-600" },
+    { key: "canManageVolunteers", color: "accent-orange-600" },
+    { key: "canManageTelegram", color: "accent-blue-600" },
+    { key: "canPostAnnouncements", color: "accent-red-600" },
+    { key: "canViewReports", color: "accent-cyan-600" },
+    { key: "canAccessSeniorManagement", color: "accent-slate-900" }
+];
+
+const buildUserUpdatePayload = (user: any) => ({
+    departmentId: user.departmentId || "",
+    role: user.role || "member",
+    canManageUsers: !!user.canManageUsers,
+    canViewAdminTable: !!user.canViewAdminTable,
+    canManageOrg: !!user.canManageOrg,
+    canEditIdentity: !!user.canEditIdentity,
+    canManageVolunteers: !!user.canManageVolunteers,
+    canManageTelegram: !!user.canManageTelegram,
+    canPostAnnouncements: !!user.canPostAnnouncements,
+    canViewReports: !!user.canViewReports,
+    canAccessSeniorManagement: !!user.canAccessSeniorManagement
+});
+
 export default function UserManagement() {
     const [users, setUsers] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [dirtyUserIds, setDirtyUserIds] = useState<Set<string>>(new Set());
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -14,6 +42,7 @@ export default function UserManagement() {
         const userSnapshot = await getDocs(usersCol);
         const userList = userSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         setUsers(userList);
+        setDirtyUserIds(new Set());
         setLoading(false);
     };
 
@@ -21,21 +50,51 @@ export default function UserManagement() {
         fetchUsers();
     }, []);
 
-    const updateUser = async (userId: string, data: any) => {
-        await updateDoc(doc(db, "users", userId), data);
-        alert("تم تحديث البيانات بنجاح");
-        fetchUsers();
+    const patchUserLocal = (userId: string, data: any) => {
+        setUsers(prev => prev.map(user => user.id === userId ? { ...user, ...data } : user));
+        setDirtyUserIds(prev => new Set(prev).add(userId));
     };
+
+    const saveAllChanges = async () => {
+        const changedUsers = users.filter(user => dirtyUserIds.has(user.id));
+        if (changedUsers.length === 0) return;
+
+        setSaving(true);
+        try {
+            await Promise.all(changedUsers.map(user => updateDoc(doc(db, "users", user.id), buildUserUpdatePayload(user))));
+            alert(`تم حفظ صلاحيات ${changedUsers.length} مستخدم بنجاح`);
+            await fetchUsers();
+        } catch (error) {
+            console.error(error);
+            alert("فشل حفظ بعض التغييرات");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const SaveAllButton = () => (
+        <button
+            onClick={saveAllChanges}
+            disabled={saving || dirtyUserIds.size === 0}
+            className="bg-indigo-600 text-white px-5 py-3 rounded-2xl text-xs font-black shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+        >
+            <Save size={16} />
+            {saving ? "جاري الحفظ..." : `حفظ كل التغييرات (${dirtyUserIds.size})`}
+        </button>
+    );
 
     return (
         <div className="p-4 md:p-8 bg-white dark:bg-gray-900 min-h-screen">
             <div className="max-w-7xl mx-auto bg-white dark:bg-gray-800 rounded-3xl p-6 md:p-8 shadow-xl border border-gray-100 dark:border-gray-700">
-                <h2 className="text-2xl md:text-3xl font-black mb-8 flex items-center gap-3 text-gray-800 dark:text-white">
-                    <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl text-indigo-600 dark:text-indigo-400">
-                        <Users size={28} />
-                    </div>
-                    إدارة صلاحيات المستخدمين
-                </h2>
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
+                    <h2 className="text-2xl md:text-3xl font-black flex items-center gap-3 text-gray-800 dark:text-white">
+                        <div className="p-3 bg-indigo-100 dark:bg-indigo-900/30 rounded-2xl text-indigo-600 dark:text-indigo-400">
+                            <Users size={28} />
+                        </div>
+                        إدارة صلاحيات المستخدمين
+                    </h2>
+                    <SaveAllButton />
+                </div>
 
                 {loading ? (
                     <div className="flex flex-col items-center justify-center py-20 space-y-4">
@@ -48,14 +107,13 @@ export default function UserManagement() {
                     </div>
                 ) : (
                     <div className="space-y-10">
-                        {/* Categorized Users */}
                         {[...DEPARTMENTS, { id: "unassigned", name: "أعضاء غير موزعين", nameAr: "أعضاء غير موزعين" }].map(dept => {
-                            const deptUsers = dept.id === "unassigned" 
+                            const deptUsers = dept.id === "unassigned"
                                 ? users.filter(u => !u.departmentId || !DEPARTMENTS.some(d => d.id === u.departmentId))
                                 : users.filter(u => u.departmentId === dept.id);
-                            
+
                             if (deptUsers.length === 0) return null;
-                            
+
                             return (
                                 <div key={dept.id} className="relative">
                                     <div className="flex items-center gap-3 mb-6">
@@ -79,7 +137,7 @@ export default function UserManagement() {
                                                     <th className="p-4 text-center font-black text-gray-500">إعلانات</th>
                                                     <th className="p-4 text-center font-black text-gray-500">تقارير</th>
                                                     <th className="p-4 text-center font-black text-gray-500">إدارة عليا</th>
-                                                    <th className="p-4 font-black text-gray-500 text-center">الإجراءات</th>
+                                                    <th className="p-4 font-black text-gray-500 text-center">الحالة</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-50 dark:divide-gray-700 transition-colors">
@@ -93,17 +151,17 @@ export default function UserManagement() {
                                                         </td>
                                                         <td className="p-4">
                                                             <div className="flex flex-col gap-2">
-                                                                <select 
+                                                                <select
                                                                     value={user.departmentId || ""}
-                                                                    onChange={(e) => setUsers(prev => prev.map(u => u.id === user.id ? {...u, departmentId: e.target.value} : u))}
+                                                                    onChange={(e) => patchUserLocal(user.id, { departmentId: e.target.value })}
                                                                     className="p-2 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl text-[10px] font-bold outline-none ring-1 ring-transparent focus:ring-indigo-500 transition"
                                                                 >
                                                                     <option value="">-- القسم --</option>
                                                                     {DEPARTMENTS.map(d => <option key={d.id} value={d.id}>{d.nameAr || d.name}</option>)}
                                                                 </select>
-                                                                <select 
+                                                                <select
                                                                     value={user.role || "member"}
-                                                                    onChange={(e) => setUsers(prev => prev.map(u => u.id === user.id ? {...u, role: e.target.value} : u))}
+                                                                    onChange={(e) => patchUserLocal(user.id, { role: e.target.value })}
                                                                     className="p-2 bg-gray-50 dark:bg-gray-900 border border-gray-100 dark:border-gray-700 rounded-xl text-[10px] font-bold outline-none ring-1 ring-transparent focus:ring-indigo-500 transition"
                                                                 >
                                                                     {USER_ROLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
@@ -111,48 +169,24 @@ export default function UserManagement() {
                                                                 </select>
                                                             </div>
                                                         </td>
-                                                        
-                                                        {/* Permissions Checkboxes - Premium Styled */}
-                                                        {[
-                                                            { key: 'canManageUsers', color: 'accent-indigo-600' },
-                                                            { key: 'canViewAdminTable', color: 'accent-green-600' },
-                                                            { key: 'canManageOrg', color: 'accent-purple-600' },
-                                                            { key: 'canEditIdentity', color: 'accent-pink-600' },
-                                                            { key: 'canManageVolunteers', color: 'accent-orange-600' },
-                                                            { key: 'canManageTelegram', color: 'accent-blue-600' },
-                                                            { key: 'canPostAnnouncements', color: 'accent-red-600' },
-                                                            { key: 'canViewReports', color: 'accent-cyan-600' },
-                                                            { key: 'canAccessSeniorManagement', color: 'accent-slate-900' }
-                                                        ].map(perm => (
+
+                                                        {PERMISSIONS.map(perm => (
                                                             <td key={perm.key} className="p-4 text-center">
-                                                                <input 
-                                                                    type="checkbox" 
-                                                                    checked={!!user[perm.key]} 
-                                                                    onChange={(e) => setUsers(prev => prev.map(u => u.id === user.id ? {...u, [perm.key]: e.target.checked} : u))} 
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={!!user[perm.key]}
+                                                                    onChange={(e) => patchUserLocal(user.id, { [perm.key]: e.target.checked })}
                                                                     className={`w-5 h-5 cursor-pointer rounded-lg shadow-sm transition transform active:scale-95 ${perm.color}`}
                                                                 />
                                                             </td>
                                                         ))}
 
-                                                        <td className="p-4">
-                                                            <button 
-                                                                onClick={() => updateUser(user.id, { 
-                                                                    departmentId: user.departmentId || "", 
-                                                                    role: user.role || "member", 
-                                                                    canManageUsers: !!user.canManageUsers,
-                                                                    canViewAdminTable: !!user.canViewAdminTable,
-                                                                    canManageOrg: !!user.canManageOrg,
-                                                                    canEditIdentity: !!user.canEditIdentity,
-                                                                    canManageVolunteers: !!user.canManageVolunteers,
-                                                                    canManageTelegram: !!user.canManageTelegram,
-                                                                    canPostAnnouncements: !!user.canPostAnnouncements,
-                                                                    canViewReports: !!user.canViewReports,
-                                                                    canAccessSeniorManagement: !!user.canAccessSeniorManagement 
-                                                                })}
-                                                                className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-black shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition transform hover:-translate-y-1 active:scale-95 flex items-center justify-center gap-2"
-                                                            >
-                                                                <Save size={14} /> حفظ
-                                                            </button>
+                                                        <td className="p-4 text-center">
+                                                            {dirtyUserIds.has(user.id) ? (
+                                                                <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-[10px] font-black text-amber-600">غير محفوظ</span>
+                                                            ) : (
+                                                                <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black text-emerald-600">محفوظ</span>
+                                                            )}
                                                         </td>
                                                     </tr>
                                                 ))}
@@ -162,6 +196,9 @@ export default function UserManagement() {
                                 </div>
                             );
                         })}
+                        <div className="flex justify-end">
+                            <SaveAllButton />
+                        </div>
                     </div>
                 )}
             </div>

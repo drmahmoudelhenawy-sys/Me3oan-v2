@@ -59,6 +59,7 @@ interface TelegramConfig {
             distress: { recipientIds: string[]; botId: string };
             donors: { recipientIds: string[]; botId: string };
         };
+        meetings?: { recipientIds?: string[]; attendanceRecipientIds?: string[]; announcementRecipientIds?: string[]; botId: string };
         customRoutes?: CustomRouteEntry[];
     };
     defaultBotToken?: string;
@@ -100,14 +101,16 @@ export default function TelegramMotherPanel() {
                 distress: { recipientIds: [], botId: "" },
                 donors: { recipientIds: [], botId: "" }
             },
+            meetings: { attendanceRecipientIds: [], announcementRecipientIds: [], botId: "" },
             customRoutes: []
         }
     });
 
     const [activeTab, setActiveTab] = useState<'bots' | 'people' | 'rules'>('bots');
-    const [activeRuleSubTab, setActiveRuleSubTab] = useState<'depts' | 'volunteers' | 'waman' | 'custom'>('depts');
+    const [activeRuleSubTab, setActiveRuleSubTab] = useState<'depts' | 'volunteers' | 'waman' | 'meetings' | 'custom'>('depts');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [hasUnsavedRuleChanges, setHasUnsavedRuleChanges] = useState(false);
     const [siteUsers, setSiteUsers] = useState<SiteUserEntry[]>([]);
     const [testingPersonId, setTestingPersonId] = useState<string | null>(null);
     const [activeBotTestMenuId, setActiveBotTestMenuId] = useState<string | null>(null);
@@ -149,6 +152,15 @@ export default function TelegramMotherPanel() {
                         wamanAhyaaha: {
                             distress: normalizeRecipientRule(data.rules?.wamanAhyaaha?.distress),
                             donors: normalizeRecipientRule(data.rules?.wamanAhyaaha?.donors)
+                        },
+                        meetings: {
+                            botId: data.rules?.meetings?.botId || "",
+                            attendanceRecipientIds: Array.isArray(data.rules?.meetings?.attendanceRecipientIds)
+                                ? data.rules.meetings.attendanceRecipientIds
+                                : (Array.isArray(data.rules?.meetings?.recipientIds) ? data.rules.meetings.recipientIds : []),
+                            announcementRecipientIds: Array.isArray(data.rules?.meetings?.announcementRecipientIds)
+                                ? data.rules.meetings.announcementRecipientIds
+                                : []
                         },
                         customRoutes: normalizeCustomRoutes(data.rules?.customRoutes || []),
                     },
@@ -217,6 +229,16 @@ export default function TelegramMotherPanel() {
         } finally {
             setSaving(false);
         }
+    };
+
+    const saveRuleChanges = async () => {
+        await saveConfig(config);
+        setHasUnsavedRuleChanges(false);
+    };
+
+    const setConfigAsDraft = (updated: TelegramConfig) => {
+        setConfig(updated);
+        setHasUnsavedRuleChanges(true);
     };
 
     // --- Migration Logic ---
@@ -306,6 +328,8 @@ export default function TelegramMotherPanel() {
             updated.rules.volunteers[subKey] = { ...updated.rules.volunteers[subKey], ...updates };
         } else if (category === 'wamanAhyaaha') {
             (updated.rules.wamanAhyaaha as any)[subKey] = { ...(updated.rules.wamanAhyaaha as any)[subKey], ...updates };
+        } else if (category === 'meetings') {
+            updated.rules.meetings = { ...(updated.rules.meetings || { recipientIds: [], botId: "" }), ...updates };
         } else if (category === 'customRoutes') {
             updated.rules.customRoutes = (updated.rules.customRoutes || []).map((route) => (
                 route.id === subKey ? { ...route, ...updates } : route
@@ -323,6 +347,8 @@ export default function TelegramMotherPanel() {
         Object.values(updated.rules.wamanAhyaaha || {}).forEach((rule: any) => {
             (Array.isArray(rule?.recipientIds) ? rule.recipientIds : []).forEach((id: string) => selectedIds.add(id));
         });
+        (Array.isArray(updated.rules.meetings?.attendanceRecipientIds) ? updated.rules.meetings.attendanceRecipientIds : []).forEach((id: string) => selectedIds.add(id));
+        (Array.isArray(updated.rules.meetings?.announcementRecipientIds) ? updated.rules.meetings.announcementRecipientIds : []).forEach((id: string) => selectedIds.add(id));
         (updated.rules.customRoutes || []).forEach((route: any) => {
             (Array.isArray(route?.recipientIds) ? route.recipientIds : []).forEach((id: string) => selectedIds.add(id));
             (Array.isArray(route?.targets) ? route.targets : []).forEach((target: any) => {
@@ -342,8 +368,7 @@ export default function TelegramMotherPanel() {
             }
         });
         updated.people = Array.from(peopleById.values());
-        setConfig(updated);
-        saveConfig(updated);
+        setConfigAsDraft(updated);
     };
 
     const addCustomRoute = () => {
@@ -373,8 +398,7 @@ export default function TelegramMotherPanel() {
                 customRoutes: [...(config.rules.customRoutes || []), route]
             }
         };
-        setConfig(updated);
-        saveConfig(updated);
+        setConfigAsDraft(updated);
         setNewCustomRouteName("");
     };
 
@@ -386,8 +410,7 @@ export default function TelegramMotherPanel() {
                 customRoutes: (config.rules.customRoutes || []).filter((route) => route.id !== routeId)
             }
         };
-        setConfig(updated);
-        saveConfig(updated);
+        setConfigAsDraft(updated);
     };
 
     const updateCustomRouteTarget = (routeId: string, departmentId: string, updates: Partial<CustomRouteTarget>) => {
@@ -422,8 +445,7 @@ export default function TelegramMotherPanel() {
             ])
         );
         const updated = { ...config, rules: { ...config.rules, departments } };
-        setConfig(updated);
-        saveConfig(updated);
+        setConfigAsDraft(updated);
     };
 
     const applyBotToVolunteerRules = (botId: string) => {
@@ -437,8 +459,7 @@ export default function TelegramMotherPanel() {
             ])
         );
         const updated = { ...config, rules: { ...config.rules, volunteers } };
-        setConfig(updated);
-        saveConfig(updated);
+        setConfigAsDraft(updated);
     };
 
     const applyBotToWamanRules = (botId: string) => {
@@ -452,8 +473,7 @@ export default function TelegramMotherPanel() {
                 }
             }
         };
-        setConfig(updated);
-        saveConfig(updated);
+        setConfigAsDraft(updated);
     };
 
     const getTestBotToken = (botToken?: string) => botToken || config.defaultBotToken || config.bots[0]?.token || "";
@@ -675,6 +695,21 @@ export default function TelegramMotherPanel() {
                 {/* 3. MAPPING RULES */}
                 {activeTab === 'rules' && (
                     <div className="space-y-8">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-2xl border border-amber-100 bg-amber-50 p-4 dark:border-amber-900/40 dark:bg-amber-900/10">
+                            <div>
+                                <p className="text-sm font-black text-amber-800 dark:text-amber-200">اختار كل المستلمين والبوتات براحتك، وبعدين احفظ مرة واحدة.</p>
+                                <p className="text-[11px] font-bold text-amber-600 dark:text-amber-300">
+                                    {hasUnsavedRuleChanges ? "فيه تغييرات غير محفوظة" : "كل قواعد الإرسال محفوظة"}
+                                </p>
+                            </div>
+                            <button
+                                onClick={saveRuleChanges}
+                                disabled={saving || !hasUnsavedRuleChanges}
+                                className="rounded-xl bg-amber-600 px-5 py-3 text-xs font-black text-white shadow-lg shadow-amber-200 transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-40 dark:shadow-none"
+                            >
+                                {saving ? "جاري الحفظ..." : "حفظ قواعد الإرسال"}
+                            </button>
+                        </div>
                         {/* Sub Tabs for Rules */}
                         <div className="hidden">
                             <button onClick={() => setActiveRuleSubTab('custom')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'custom' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>مسارات مخصصة</button>
@@ -687,6 +722,7 @@ export default function TelegramMotherPanel() {
                             <button onClick={() => setActiveRuleSubTab('depts')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'depts' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>بوت التاسكات / العام</button>
                             <button onClick={() => setActiveRuleSubTab('volunteers')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'volunteers' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>بوت طلبات التطوع</button>
                             <button onClick={() => setActiveRuleSubTab('waman')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'waman' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>بوت ومن أحياها</button>
+                            <button onClick={() => setActiveRuleSubTab('meetings')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'meetings' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>الميتنج / الإعلانات</button>
                             <button onClick={() => setActiveRuleSubTab('custom')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'custom' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>مسارات مخصصة</button>
                         </div>
 
@@ -926,6 +962,77 @@ export default function TelegramMotherPanel() {
                                             </button>
                                             );
                                         })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeRuleSubTab === 'meetings' && (
+                            <div className="space-y-6">
+                                <div className="bg-cyan-50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-800 rounded-2xl p-5 space-y-4">
+                                    <div>
+                                        <h4 className="font-bold text-cyan-800 dark:text-cyan-300 flex items-center gap-2"><Bell size={16}/> إعدادات الميتنج / الإعلانات</h4>
+                                        <p className="text-[10px] text-cyan-700/70 dark:text-cyan-300/70 mt-1">عند تأكيد الحضور، يتم إرسال إشعار لكل المستلمين المحددين هنا.</p>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-bold text-cyan-500 block mb-2">البوت المستخدم لإشعارات تأكيد الحضور:</label>
+                                        <select
+                                            className="w-full p-3 bg-white dark:bg-gray-800 rounded-xl text-sm outline-none border border-cyan-100 dark:border-cyan-800"
+                                            value={config.rules.meetings?.botId || ""}
+                                            onChange={e => updateRule('meetings', 'attendance', { botId: e.target.value })}
+                                        >
+                                            <option value="">اختر البوت...</option>
+                                            {config.bots.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-bold text-cyan-500 block">مستلمو إشعار وجود ميتنج / إعلان جديد:</label>
+                                        <div className="flex flex-wrap gap-2 bg-white dark:bg-gray-800 p-3 rounded-xl border border-cyan-100 dark:border-cyan-800">
+                                            {availablePeople.map(person => {
+                                                const selectedIds = config.rules.meetings?.announcementRecipientIds || [];
+                                                const active = selectedIds.includes(person.id);
+                                                return (
+                                                    <button
+                                                        key={person.id}
+                                                        onClick={() => {
+                                                            const announcementRecipientIds = active
+                                                                ? selectedIds.filter((id) => id !== person.id)
+                                                                : [...selectedIds, person.id];
+                                                            updateRule('meetings', 'announcement', { announcementRecipientIds });
+                                                        }}
+                                                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition ${active ? 'bg-cyan-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300'}`}
+                                                    >
+                                                        {person.name}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-bold text-cyan-500 block">مستلمو إشعار تأكيد الحضور:</label>
+                                        <div className="flex flex-wrap gap-2 bg-white dark:bg-gray-800 p-3 rounded-xl border border-cyan-100 dark:border-cyan-800">
+                                            {availablePeople.map(person => {
+                                                const selectedIds = config.rules.meetings?.attendanceRecipientIds || config.rules.meetings?.recipientIds || [];
+                                                const active = selectedIds.includes(person.id);
+                                                return (
+                                                    <button
+                                                        key={person.id}
+                                                        onClick={() => {
+                                                            const attendanceRecipientIds = active
+                                                                ? selectedIds.filter((id) => id !== person.id)
+                                                                : [...selectedIds, person.id];
+                                                            updateRule('meetings', 'attendance', { attendanceRecipientIds });
+                                                        }}
+                                                        className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition ${active ? 'bg-cyan-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300'}`}
+                                                    >
+                                                        {person.name}
+                                                    </button>
+                                                );
+                                            })}
+                                            {availablePeople.length === 0 && (
+                                                <p className="text-xs text-gray-400 font-bold">أضف أشخاصا أولا من تبويب الأشخاص.</p>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>

@@ -40,6 +40,8 @@ import { DEPARTMENTS, SUPER_ADMIN_EMAIL, CHARITY_ROLES, USER_ROLES } from "../ut
 import { TRANSLATIONS } from "../utils/translations";
 import {
   resolveDepartmentLeadership,
+  resolveMeetingAnnouncementRoute,
+  resolveMeetingRoute,
   resolveVolunteerRoute,
   sendTelegramToChatIds,
   type TelegramNotifyMode
@@ -1073,6 +1075,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
         
         const data = docSnap.data();
         const attendees = data.attendees || [];
+        const confirmedIds = Array.from(new Set([...(Array.isArray(attendees) ? attendees : []), user.uid]));
         
         if (attendees.includes(user.uid)) {
             alert("لقد قمت بتأكيد الحضور مسبقاً");
@@ -1083,19 +1086,33 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
         await updateDoc(docRef, {
             attendees: arrayUnion(user.uid)
         });
+
+        const meetingRoute = resolveMeetingRoute(telegramConfig);
+        if (onSendTelegram && meetingRoute.chatIds.length > 0) {
+            const attendeeName = userProfile?.displayName || user.displayName || user.email || "مستخدم";
+            const confirmedAtText = new Date().toLocaleString('ar-EG');
+            const usersSnapshot = await getDocs(collection(db, "users"));
+            const allUsers = usersSnapshot.docs.map((userDoc) => ({ id: userDoc.id, ...(userDoc.data() as any) }));
+            const configuredAudienceIds = [
+                ...(Array.isArray(data.invitedUserIds) ? data.invitedUserIds : []),
+                ...(Array.isArray(data.targetUserIds) ? data.targetUserIds : []),
+                ...(Array.isArray(data.expectedAttendeeIds) ? data.expectedAttendeeIds : [])
+            ].filter(Boolean);
+            const audienceUsers = configuredAudienceIds.length > 0
+                ? allUsers.filter((item) => configuredAudienceIds.includes(item.id) || configuredAudienceIds.includes(item.uid))
+                : allUsers;
+            const getUserDisplayName = (item: any) => item.displayName || item.name || item.email || item.id;
+            const isConfirmedUser = (item: any) => confirmedIds.includes(item.id) || confirmedIds.includes(item.uid);
+            const confirmedNames = audienceUsers.filter(isConfirmedUser).map(getUserDisplayName);
+            if (!confirmedNames.includes(attendeeName)) confirmedNames.push(attendeeName);
+            const remainingNames = audienceUsers.filter((item) => !isConfirmedUser(item)).map(getUserDisplayName);
+            const formatNames = (names: string[]) => names.length ? names.map((name, index) => `${index + 1}. ${name}`).join("\n") : "-";
+            const enrichedMsg = `✅ <b>تأكيد حضور جديد</b>\n\n👤 <b>الاسم:</b> ${attendeeName}\n📌 <b>الاجتماع / الإعلان:</b> ${data.topic || data.title || "-"}\n🕒 <b>وقت التأكيد:</b> ${confirmedAtText}\n\n✅ <b>أكدوا حتى الآن (${confirmedNames.length}):</b>\n${formatNames(confirmedNames)}\n\n⏳ <b>لم يؤكدوا بعد (${remainingNames.length}):</b>\n${formatNames(remainingNames)}`;
+            const msg = `✅ <b>تأكيد حضور جديد</b>\n\n👤 <b>الاسم:</b> ${attendeeName}\n📌 <b>الاجتماع / الإعلان:</b> ${data.topic || data.title || "-"}\n🕒 <b>وقت التأكيد:</b> ${confirmedAtText}`;
+            sendTelegramToChatIds(onSendTelegram, meetingRoute.chatIds, enrichedMsg || msg, meetingRoute.botToken);
+        }
         
         alert("تم تأكيد الحضور بنجاح!");
-        
-        // Notify HR Head
-        if (telegramConfig?.generalContacts) {
-            const hrDept = telegramConfig.generalContacts.find((c: any) => c.departmentId === 'hr');
-            const hrHead = hrDept?.contacts?.find((c: any) => c.role === 'manager' || c.responsibleForDept === 'hr');
-            
-            if (hrHead && hrHead.chatId && onSendTelegram) {
-                const msg = `✅ <b>تأكيد حضور جديد</b>\n\n👤 الاسم: ${user.displayName}\n📅 الفعالية: ${data.topic}`;
-                onSendTelegram(hrHead.chatId, msg);
-            }
-        }
         
         window.history.replaceState({}, document.title, window.location.pathname);
       } catch (e) { console.error(e); }
@@ -1146,6 +1163,12 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                   details: newEvent.details,
                   notificationSettings
               });
+              if (onSendTelegram) {
+                  const announcementRoute = resolveMeetingAnnouncementRoute(telegramConfig);
+                  const editedAtText = new Date().toLocaleString('ar-EG');
+                  const editMsg = `✏️ <b>تم تعديل إعلان اجتماع</b>\n\n📢 <b>${newEvent.title}</b>\n📅 <b>الموعد:</b> ${newEvent.date || "-"} - ${newEvent.time || "-"}\n📍 <b>النوع:</b> ${newEvent.type === "online" ? "أونلاين" : "حضوري"}\n👤 <b>تم التعديل بواسطة:</b> ${userProfile?.displayName || user.email}\n🕒 <b>وقت التعديل:</b> ${editedAtText}`;
+                  sendTelegramToChatIds(onSendTelegram, announcementRoute.chatIds, editMsg, announcementRoute.botToken);
+              }
               alert("تم تحديث الإعلان بنجاح");
           } else {
               // CREATE New Event
@@ -1185,7 +1208,12 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                   const confirmLink = `${window.location.origin}?confirmEvent=${docRef.id}`;
                   msg += `\n👤 <b>بواسطة:</b> ${userProfile?.displayName || user.email}`;
                   msg += `\n✅ لتأكيد الحضور: ${confirmLink}`;
-                  sendToAllDeptLeadership(msg);
+                  const announcementRoute = resolveMeetingAnnouncementRoute(telegramConfig);
+                  const sent = sendTelegramToChatIds(onSendTelegram, announcementRoute.chatIds, msg, announcementRoute.botToken);
+                  if (!sent) {
+                      console.warn("No Telegram meeting announcement recipients configured", telegramConfig?.rules?.meetings);
+                      toast.error("تم نشر الإعلان، لكن لم يتم تحديد مستلمين لإشعار الميتنج في إعدادات البوت");
+                  }
               }
               alert("تم نشر الإعلان بنجاح");
           }
@@ -1203,7 +1231,16 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
   const handleDeleteEvent = async (id: string) => {
       if (!window.confirm("هل أنت متأكد من حذف هذا الإعلان؟")) return;
       try {
-          await deleteDoc(doc(db, "management_meetings", id));
+          const eventRef = doc(db, "management_meetings", id);
+          const eventSnap = await getDoc(eventRef);
+          const eventData = eventSnap.exists() ? eventSnap.data() : null;
+          await deleteDoc(eventRef);
+          if (onSendTelegram && eventData) {
+              const announcementRoute = resolveMeetingAnnouncementRoute(telegramConfig);
+              const deletedAtText = new Date().toLocaleString('ar-EG');
+              const deleteMsg = `🗑️ <b>تم حذف إعلان اجتماع</b>\n\n📢 <b>${eventData.topic || eventData.title || "-"}</b>\n📅 <b>الموعد السابق:</b> ${eventData.date || "-"} - ${eventData.time || "-"}\n👤 <b>تم الحذف بواسطة:</b> ${userProfile?.displayName || user.email}\n🕒 <b>وقت الحذف:</b> ${deletedAtText}`;
+              sendTelegramToChatIds(onSendTelegram, announcementRoute.chatIds, deleteMsg, announcementRoute.botToken);
+          }
           alert("تم الحذف بنجاح");
       } catch (e) { console.error(e); alert("فشل الحذف"); }
   };
