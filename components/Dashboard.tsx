@@ -1787,6 +1787,53 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
 
             {/* View Content */}
             <div className="flex-1 overflow-y-auto custom-scrollbar">
+                {currentView !== 'overview' && announcements.length > 0 && accessLevel !== 'charity_restricted' && (
+                    <div className="p-4 pb-0 md:px-8">
+                        <div className="mx-auto max-w-7xl overflow-hidden rounded-2xl bg-gradient-to-l from-indigo-600 via-indigo-700 to-purple-700 shadow-lg shadow-indigo-500/20">
+                            <div className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+                                <div className="min-w-0">
+                                    <div className="mb-2 flex items-center gap-2">
+                                        <span className="rounded-full bg-white/15 px-3 py-1 text-[10px] font-black text-indigo-100">إعلان اجتماع</span>
+                                        <Bell size={15} className="text-indigo-100" />
+                                    </div>
+                                    <p className="truncate text-base font-black text-white md:text-lg">{announcements[0].topic}</p>
+                                    <p className="mt-1 text-xs font-bold text-indigo-100">{announcements[0].date || "-"} — {announcements[0].time || "-"}</p>
+                                </div>
+
+                                <div className="flex shrink-0 gap-2">
+                                    {(announcements[0].attendees?.includes(user.uid) || announcements[0].apologies?.includes(user.uid)) ? (
+                                        <div className="flex min-w-[170px] items-center justify-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2 text-xs font-black text-white">
+                                            {announcements[0].attendees?.includes(user.uid) ? <><CheckCircle2 size={15} className="text-green-300"/> تم تأكيد الحضور</> : <><X size={15} className="text-red-300"/> تم الاعتذار</>}
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <button
+                                                onClick={() => handleConfirmAttendance(announcements[0].id)}
+                                                className="flex items-center justify-center gap-1.5 rounded-xl bg-white px-4 py-2 text-xs font-black text-indigo-700 transition hover:bg-indigo-50"
+                                            >
+                                                <CheckCircle2 size={15} /> حضور
+                                            </button>
+                                            <button
+                                                onClick={async () => {
+                                                    const reason = prompt("سبب الاعتذار:");
+                                                    if (!reason) return;
+                                                    const event = announcements[0];
+                                                    await updateDoc(doc(db, "management_meetings", event.id), {
+                                                        apologies: [...(event.apologies || []), user.uid]
+                                                    });
+                                                    alert("تم تسجيل الاعتذار");
+                                                }}
+                                                className="flex items-center justify-center gap-1.5 rounded-xl border border-white/30 bg-white/15 px-4 py-2 text-xs font-black text-white transition hover:bg-white/25"
+                                            >
+                                                <X size={15} /> اعتذار
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
                 
                 {currentView === 'overview' && (
                     <div className="p-4 md:p-8 space-y-6 md:space-y-8 max-w-7xl mx-auto">
