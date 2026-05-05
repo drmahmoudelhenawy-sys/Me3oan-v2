@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
     MessageCircle, Plus, Trash2, Bot, Users, Settings, 
     Bell, Check, X, Shield, Send, AlertTriangle, 
     Droplet, ChevronDown, UserCheck, RefreshCw, Smartphone
 } from "lucide-react";
 import { db } from "../services/firebase";
-import { doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDoc, setDoc, onSnapshot } from "firebase/firestore";
 import { DEPARTMENTS } from "../utils/constants";
 import toast from "react-hot-toast";
 
@@ -20,6 +20,33 @@ interface PersonEntry {
     id: string;
     name: string;
     chatId: string;
+    source?: "manual" | "site";
+}
+
+interface SiteUserEntry {
+    id: string;
+    uid?: string;
+    displayName?: string;
+    email?: string;
+    telegramId?: string;
+    chatId?: string;
+    telegramChatId?: string;
+}
+
+interface CustomRouteTarget {
+    departmentId: string;
+    recipientMode: "manager_only" | "manager_and_deputy" | "custom";
+    recipientIds: string[];
+}
+
+interface CustomRouteEntry {
+    id: string;
+    name: string;
+    botId: string;
+    scope: "general" | "departments";
+    recipientMode: "custom" | "manager_only" | "manager_and_deputy";
+    recipientIds: string[];
+    targets: CustomRouteTarget[];
 }
 
 interface TelegramConfig {
@@ -32,9 +59,35 @@ interface TelegramConfig {
             distress: { recipientIds: string[]; botId: string };
             donors: { recipientIds: string[]; botId: string };
         };
+        customRoutes?: CustomRouteEntry[];
     };
     defaultBotToken?: string;
 }
+
+const normalizeRecipientRule = (rule: any = {}) => ({
+    recipientIds: Array.isArray(rule?.recipientIds) ? rule.recipientIds : [],
+    botId: rule?.botId || ""
+});
+
+const normalizeCustomRoutes = (routes: any[] = []): CustomRouteEntry[] =>
+    routes.map((route) => ({
+        id: route?.id || `route_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        name: route?.name || "مسار إرسال مخصص",
+        botId: route?.botId || "",
+        scope: route?.scope === "departments" ? "departments" : "general",
+        recipientMode: ["custom", "manager_only", "manager_and_deputy"].includes(route?.recipientMode) ? route.recipientMode : "custom",
+        recipientIds: Array.isArray(route?.recipientIds) ? route.recipientIds : [],
+        targets: Array.isArray(route?.targets)
+            ? route.targets.map((target: any) => ({
+                departmentId: target?.departmentId || "general",
+                recipientMode: ["custom", "manager_only", "manager_and_deputy"].includes(target?.recipientMode) ? target.recipientMode : "manager_and_deputy",
+                recipientIds: Array.isArray(target?.recipientIds) ? target.recipientIds : []
+            }))
+            : []
+    }));
+
+const getSiteUserChatId = (user: SiteUserEntry) =>
+    String(user.telegramId || user.chatId || user.telegramChatId || "").trim();
 
 export default function TelegramMotherPanel() {
     const [config, setConfig] = useState<TelegramConfig>({
@@ -46,18 +99,23 @@ export default function TelegramMotherPanel() {
             wamanAhyaaha: {
                 distress: { recipientIds: [], botId: "" },
                 donors: { recipientIds: [], botId: "" }
-            }
+            },
+            customRoutes: []
         }
     });
 
     const [activeTab, setActiveTab] = useState<'bots' | 'people' | 'rules'>('bots');
-    const [activeRuleSubTab, setActiveRuleSubTab] = useState<'depts' | 'volunteers' | 'waman'>('depts');
+    const [activeRuleSubTab, setActiveRuleSubTab] = useState<'depts' | 'volunteers' | 'waman' | 'custom'>('depts');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [siteUsers, setSiteUsers] = useState<SiteUserEntry[]>([]);
+    const [testingPersonId, setTestingPersonId] = useState<string | null>(null);
+    const [activeBotTestMenuId, setActiveBotTestMenuId] = useState<string | null>(null);
 
     // Form States
     const [newBot, setNewBot] = useState({ name: "", token: "" });
     const [newPerson, setNewPerson] = useState({ name: "", chatId: "" });
+    const [newCustomRouteName, setNewCustomRouteName] = useState("");
 
     useEffect(() => {
         const unsub = onSnapshot(doc(db, "app_settings", "telegram_config"), (docSnap) => {
@@ -82,11 +140,17 @@ export default function TelegramMotherPanel() {
                                 }
                             ]))
                         ),
-                        volunteers: data.rules?.volunteers || {},
-                        wamanAhyaaha: data.rules?.wamanAhyaaha || {
-                            distress: { recipientIds: [], botId: "" },
-                            donors: { recipientIds: [], botId: "" }
-                        }
+                        volunteers: Object.fromEntries(
+                            Object.entries(data.rules?.volunteers || {}).map(([deptId, rule]) => [
+                                deptId,
+                                normalizeRecipientRule(rule)
+                            ])
+                        ),
+                        wamanAhyaaha: {
+                            distress: normalizeRecipientRule(data.rules?.wamanAhyaaha?.distress),
+                            donors: normalizeRecipientRule(data.rules?.wamanAhyaaha?.donors)
+                        },
+                        customRoutes: normalizeCustomRoutes(data.rules?.customRoutes || []),
                     },
                     defaultBotToken: data.defaultBotToken || ""
                 };
@@ -96,6 +160,51 @@ export default function TelegramMotherPanel() {
         });
         return () => unsub();
     }, []);
+
+    useEffect(() => {
+        const unsub = onSnapshot(collection(db, "users"), (snapshot) => {
+            setSiteUsers(snapshot.docs.map((userDoc) => ({
+                id: userDoc.id,
+                ...(userDoc.data() as any)
+            })));
+        }, (error) => {
+            console.warn("Unable to load site users for Telegram recipients", error);
+        });
+        return () => unsub();
+    }, []);
+
+    const availablePeople = useMemo<PersonEntry[]>(() => {
+        const people: PersonEntry[] = [];
+        const seenIds = new Set<string>();
+        const seenChatIds = new Set<string>();
+
+        (config.people || []).forEach((person) => {
+            if (!person?.id) return;
+            const chatId = String(person.chatId || "").trim();
+            people.push({ ...person, chatId, source: person.source || "manual" });
+            seenIds.add(person.id);
+            if (chatId) seenChatIds.add(chatId);
+        });
+
+        siteUsers.forEach((siteUser) => {
+            const uid = siteUser.uid || siteUser.id;
+            const id = `site_${uid}`;
+            const chatId = getSiteUserChatId(siteUser);
+            if (!chatId) return;
+            if (seenIds.has(id) || (chatId && seenChatIds.has(chatId))) return;
+
+            people.push({
+                id,
+                name: siteUser.displayName || siteUser.email || "مستخدم بدون اسم",
+                chatId,
+                source: "site"
+            });
+            seenIds.add(id);
+            if (chatId) seenChatIds.add(chatId);
+        });
+
+        return people.sort((a, b) => a.name.localeCompare(b.name, "ar"));
+    }, [config.people, siteUsers]);
 
     const saveConfig = async (newConfig: TelegramConfig) => {
         setSaving(true);
@@ -197,31 +306,216 @@ export default function TelegramMotherPanel() {
             updated.rules.volunteers[subKey] = { ...updated.rules.volunteers[subKey], ...updates };
         } else if (category === 'wamanAhyaaha') {
             (updated.rules.wamanAhyaaha as any)[subKey] = { ...(updated.rules.wamanAhyaaha as any)[subKey], ...updates };
+        } else if (category === 'customRoutes') {
+            updated.rules.customRoutes = (updated.rules.customRoutes || []).map((route) => (
+                route.id === subKey ? { ...route, ...updates } : route
+            ));
         }
+        const selectedIds = new Set<string>();
+        Object.values(updated.rules.departments || {}).forEach((rule: any) => {
+            if (rule?.managerId) selectedIds.add(rule.managerId);
+            (Array.isArray(rule?.deputyIds) ? rule.deputyIds : []).forEach((id: string) => selectedIds.add(id));
+            if (rule?.deputyId) selectedIds.add(rule.deputyId);
+        });
+        Object.values(updated.rules.volunteers || {}).forEach((rule: any) => {
+            (Array.isArray(rule?.recipientIds) ? rule.recipientIds : []).forEach((id: string) => selectedIds.add(id));
+        });
+        Object.values(updated.rules.wamanAhyaaha || {}).forEach((rule: any) => {
+            (Array.isArray(rule?.recipientIds) ? rule.recipientIds : []).forEach((id: string) => selectedIds.add(id));
+        });
+        (updated.rules.customRoutes || []).forEach((route: any) => {
+            (Array.isArray(route?.recipientIds) ? route.recipientIds : []).forEach((id: string) => selectedIds.add(id));
+            (Array.isArray(route?.targets) ? route.targets : []).forEach((target: any) => {
+                (Array.isArray(target?.recipientIds) ? target.recipientIds : []).forEach((id: string) => selectedIds.add(id));
+            });
+        });
+
+        const peopleById = new Map((updated.people || []).map((person) => [person.id, person]));
+        availablePeople.forEach((person) => {
+            if (selectedIds.has(person.id) && person.chatId && !peopleById.has(person.id)) {
+                peopleById.set(person.id, {
+                    id: person.id,
+                    name: person.name,
+                    chatId: person.chatId,
+                    source: person.source
+                });
+            }
+        });
+        updated.people = Array.from(peopleById.values());
         setConfig(updated);
         saveConfig(updated);
     };
 
+    const addCustomRoute = () => {
+        const name = newCustomRouteName.trim();
+        if (!name) {
+            toast.error("اكتب اسم المسار أولا");
+            return;
+        }
+
+        const route: CustomRouteEntry = {
+            id: `custom_${Date.now()}`,
+            name,
+            botId: "",
+            scope: "general",
+            recipientMode: "custom",
+            recipientIds: [],
+            targets: DEPARTMENTS.map((dept) => ({
+                departmentId: dept.id,
+                recipientMode: "manager_and_deputy",
+                recipientIds: []
+            }))
+        };
+        const updated = {
+            ...config,
+            rules: {
+                ...config.rules,
+                customRoutes: [...(config.rules.customRoutes || []), route]
+            }
+        };
+        setConfig(updated);
+        saveConfig(updated);
+        setNewCustomRouteName("");
+    };
+
+    const deleteCustomRoute = (routeId: string) => {
+        const updated = {
+            ...config,
+            rules: {
+                ...config.rules,
+                customRoutes: (config.rules.customRoutes || []).filter((route) => route.id !== routeId)
+            }
+        };
+        setConfig(updated);
+        saveConfig(updated);
+    };
+
+    const updateCustomRouteTarget = (routeId: string, departmentId: string, updates: Partial<CustomRouteTarget>) => {
+        const route = (config.rules.customRoutes || []).find((item) => item.id === routeId);
+        if (!route) return;
+        const existingTargets = route.targets || [];
+        const target = existingTargets.find((item) => item.departmentId === departmentId) || {
+            departmentId,
+            recipientMode: "manager_and_deputy",
+            recipientIds: []
+        };
+        const nextTargets = [
+            ...existingTargets.filter((item) => item.departmentId !== departmentId),
+            { ...target, ...updates }
+        ].sort((a, b) => DEPARTMENTS.findIndex((dept) => dept.id === a.departmentId) - DEPARTMENTS.findIndex((dept) => dept.id === b.departmentId));
+        updateRule("customRoutes", routeId, { targets: nextTargets });
+    };
+
+    const applyBotToDepartmentRules = (botId: string) => {
+        const departments = Object.fromEntries(
+            DEPARTMENTS.map((dept) => [
+                dept.id,
+                {
+                    managerId: config.rules.departments[dept.id]?.managerId || "",
+                    deputyId: config.rules.departments[dept.id]?.deputyId || "",
+                    deputyIds: Array.isArray(config.rules.departments[dept.id]?.deputyIds)
+                        ? config.rules.departments[dept.id].deputyIds
+                        : (config.rules.departments[dept.id]?.deputyId ? [config.rules.departments[dept.id].deputyId] : []),
+                    forwardNotifyMode: config.rules.departments[dept.id]?.forwardNotifyMode || "manager_and_deputy",
+                    botId
+                }
+            ])
+        );
+        const updated = { ...config, rules: { ...config.rules, departments } };
+        setConfig(updated);
+        saveConfig(updated);
+    };
+
+    const applyBotToVolunteerRules = (botId: string) => {
+        const volunteers = Object.fromEntries(
+            DEPARTMENTS.filter((dept) => dept.id !== "hr").map((dept) => [
+                dept.id,
+                {
+                    recipientIds: config.rules.volunteers[dept.id]?.recipientIds || [],
+                    botId
+                }
+            ])
+        );
+        const updated = { ...config, rules: { ...config.rules, volunteers } };
+        setConfig(updated);
+        saveConfig(updated);
+    };
+
+    const applyBotToWamanRules = (botId: string) => {
+        const updated = {
+            ...config,
+            rules: {
+                ...config.rules,
+                wamanAhyaaha: {
+                    distress: { ...config.rules.wamanAhyaaha.distress, botId },
+                    donors: { ...config.rules.wamanAhyaaha.donors, botId }
+                }
+            }
+        };
+        setConfig(updated);
+        saveConfig(updated);
+    };
+
+    const getTestBotToken = (botToken?: string) => botToken || config.defaultBotToken || config.bots[0]?.token || "";
+
+    const parseTelegramError = async (res: Response) => {
+        try {
+            const data = await res.json();
+            return data?.description || `HTTP ${res.status}`;
+        } catch {
+            return `HTTP ${res.status}: ${await res.text().catch(() => "")}`;
+        }
+    };
+
+    const testPerson = async (person: PersonEntry, botToken?: string) => {
+        const tokenToUse = getTestBotToken(botToken);
+        if (!tokenToUse) {
+            toast.error("لا يوجد بوت للاختبار. أضف Bot Token الأول.");
+            return;
+        }
+        if (!person.chatId) {
+            toast.error(`لا يوجد Telegram Chat ID لـ ${person.name}`);
+            return;
+        }
+
+        setTestingPersonId(person.id);
+        const toastId = toast.loading(`جاري إرسال رسالة اختبار إلى ${person.name}...`);
+        try {
+            const botName = config.bots.find(b => b.token === tokenToUse)?.name || "البوت";
+            const res = await fetch(`https://api.telegram.org/bot${tokenToUse}/sendMessage`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: person.chatId,
+                    text: `رسالة اختبار من ${botName}\n\nلو وصلت الرسالة دي يبقى إعدادات تيليجرام شغالة لهذا الشخص.`
+                })
+            });
+
+            toast.dismiss(toastId);
+            if (res.ok) {
+                toast.success(`وصلت رسالة الاختبار إلى ${person.name}`);
+            } else {
+                toast.error(`فشل الإرسال إلى ${person.name}: ${await parseTelegramError(res)}`, { duration: 7000 });
+            }
+        } catch (e: any) {
+            toast.dismiss(toastId);
+            toast.error(`فشل الإرسال إلى ${person.name}: ${e?.message || "خطأ غير معروف"}`, { duration: 7000 });
+        } finally {
+            setTestingPersonId(null);
+        }
+    };
+
     const testBot = async (botToken: string) => {
-        if (!config.people.length) {
+        const botId = config.bots.find((bot) => bot.token === botToken)?.id || null;
+        if (availablePeople.length) {
+            setActiveBotTestMenuId(activeBotTestMenuId === botId ? null : botId);
+            return;
+        }
+        if (!availablePeople.length) {
             toast.error("أضف شخصاً واحداً على الأقل للاختبار");
             return;
         }
-        const testPerson = config.people[0];
-        toast.loading("جاري إرسال رسالة تجريبية...");
-        try {
-            const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ chat_id: testPerson.chatId, text: "🔄 رسالة اختبار من " + config.bots.find(b => b.token === botToken)?.name })
-            });
-            if (res.ok) toast.success("وصلت الرسالة لـ " + testPerson.name);
-            else throw new Error();
-        } catch (e) {
-            toast.error("فشل الاتصال بهذا البوت");
-        } finally {
-            toast.dismiss();
-        }
+        await testPerson(availablePeople[0], botToken);
     };
 
     if (loading) return <div className="p-12 text-center animate-pulse">جاري تحميل الإعدادات...</div>;
@@ -285,7 +579,7 @@ export default function TelegramMotherPanel() {
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {config.bots.map(bot => (
-                                <div key={bot.id} className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                                <div key={bot.id} className="relative bg-gray-50 dark:bg-gray-900/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <div className="bg-sky-100 dark:bg-sky-900/30 p-2 rounded-lg text-sky-600"><Bot size={20}/></div>
                                         <div>
@@ -294,6 +588,30 @@ export default function TelegramMotherPanel() {
                                         </div>
                                     </div>
                                     <div className="flex gap-2">
+                                        {activeBotTestMenuId === bot.id && (
+                                            <div className="absolute left-4 top-14 z-30 w-64 max-h-72 overflow-y-auto bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-xl p-2">
+                                                <div className="px-3 py-2 text-[10px] font-bold text-gray-400 border-b border-gray-100 dark:border-gray-700 mb-1">
+                                                    اختر شخصا للاختبار
+                                                </div>
+                                                {availablePeople.map(person => (
+                                                    <button
+                                                        key={person.id}
+                                                        onClick={async () => {
+                                                            await testPerson(person, bot.token);
+                                                            setActiveBotTestMenuId(null);
+                                                        }}
+                                                        disabled={testingPersonId === person.id}
+                                                        className="w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg text-right hover:bg-green-50 dark:hover:bg-green-900/20 transition disabled:opacity-50"
+                                                    >
+                                                        <span className="min-w-0">
+                                                            <span className="block text-xs font-bold text-gray-700 dark:text-gray-100 truncate">{person.name}</span>
+                                                            <span className="block text-[10px] text-gray-400 font-mono truncate">{person.chatId}</span>
+                                                        </span>
+                                                        {testingPersonId === person.id ? <RefreshCw size={14} className="animate-spin text-green-600 shrink-0" /> : <Send size={14} className="text-green-600 shrink-0" />}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
                                         <button onClick={() => testBot(bot.token)} className="p-2 text-green-600 hover:bg-green-50 dark:hover:bg-green-900/20 rounded-lg transition" title="اختبار"><Send size={18}/></button>
                                         <button onClick={() => deleteBot(bot.id)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="حذف"><Trash2 size={18}/></button>
                                     </div>
@@ -327,16 +645,29 @@ export default function TelegramMotherPanel() {
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                            {config.people.map(person => (
+                            {availablePeople.map(person => (
                                 <div key={person.id} className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-700 p-3 rounded-xl flex items-center justify-between shadow-sm">
                                     <div>
                                         <p className="font-bold text-xs">{person.name}</p>
                                         <p className="text-[10px] text-gray-400">ID: {person.chatId}</p>
+                                        <p className="text-[10px] text-gray-300 mt-0.5">{person.source === "site" ? "مستخدم في الموقع" : "مدخل يدوي"}</p>
                                     </div>
-                                    <button onClick={() => deletePerson(person.id)} className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition"><Trash2 size={14}/></button>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={() => testPerson(person)}
+                                            disabled={testingPersonId === person.id}
+                                            className="text-emerald-600 hover:text-emerald-700 p-1.5 rounded-lg hover:bg-emerald-50 transition disabled:opacity-50"
+                                            title="اختبار إرسال"
+                                        >
+                                            {testingPersonId === person.id ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14}/>}
+                                        </button>
+                                        {person.source !== "site" && (
+                                            <button onClick={() => deletePerson(person.id)} className="text-red-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition" title="حذف"><Trash2 size={14}/></button>
+                                        )}
+                                    </div>
                                 </div>
                             ))}
-                            {config.people.length === 0 && <div className="md:col-span-3 text-center py-12 text-gray-400 font-bold">السجل فارغ حالياً</div>}
+                            {availablePeople.length === 0 && <div className="md:col-span-3 text-center py-12 text-gray-400 font-bold">لا يوجد أشخاص لديهم Telegram ID حالياً</div>}
                         </div>
                     </div>
                 )}
@@ -345,16 +676,36 @@ export default function TelegramMotherPanel() {
                 {activeTab === 'rules' && (
                     <div className="space-y-8">
                         {/* Sub Tabs for Rules */}
-                        <div className="flex gap-2 border-b dark:border-gray-700 pb-2 overflow-x-auto no-scrollbar">
+                        <div className="hidden">
+                            <button onClick={() => setActiveRuleSubTab('custom')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'custom' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>مسارات مخصصة</button>
                             <button onClick={() => setActiveRuleSubTab('depts')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'depts' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>رؤساء الأقسام</button>
                             <button onClick={() => setActiveRuleSubTab('volunteers')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'volunteers' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>طلبات التطوع</button>
                             <button onClick={() => setActiveRuleSubTab('waman')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'waman' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>نظام ومن أحياها</button>
                         </div>
 
+                        <div className="flex gap-2 border-b dark:border-gray-700 pb-2 overflow-x-auto no-scrollbar">
+                            <button onClick={() => setActiveRuleSubTab('depts')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'depts' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>بوت التاسكات / العام</button>
+                            <button onClick={() => setActiveRuleSubTab('volunteers')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'volunteers' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>بوت طلبات التطوع</button>
+                            <button onClick={() => setActiveRuleSubTab('waman')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'waman' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>بوت ومن أحياها</button>
+                            <button onClick={() => setActiveRuleSubTab('custom')} className={`px-4 py-2 text-xs font-bold rounded-lg transition ${activeRuleSubTab === 'custom' ? 'bg-indigo-600 text-white' : 'text-gray-500'}`}>مسارات مخصصة</button>
+                        </div>
+
                         {/* A. DEPARTMENTS RULES */}
                         {activeRuleSubTab === 'depts' && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {DEPARTMENTS.map(dept => {
+                            <div className="space-y-6">
+                                <div className="bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-800 rounded-2xl p-4">
+                                    <label className="text-[10px] font-bold text-indigo-500 block mb-2">البوت المستخدم لإشعارات التاسكات / العام:</label>
+                                    <select
+                                        className="w-full p-3 bg-white dark:bg-gray-800 rounded-xl text-sm outline-none border border-indigo-100 dark:border-indigo-800"
+                                        value={DEPARTMENTS.map((dept) => config.rules.departments[dept.id]?.botId || "").find(Boolean) || ""}
+                                        onChange={e => applyBotToDepartmentRules(e.target.value)}
+                                    >
+                                        <option value="">اختر البوت...</option>
+                                        {config.bots.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                    </select>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    {DEPARTMENTS.map(dept => {
                                     const rule = config.rules.departments[dept.id] || { managerId: "", deputyId: "", deputyIds: [], botId: "", forwardNotifyMode: "manager_and_deputy" };
                                     const selectedDeputyIds = Array.isArray(rule.deputyIds)
                                         ? rule.deputyIds
@@ -398,13 +749,13 @@ export default function TelegramMotherPanel() {
                                                             onChange={e => updateRule('departments', dept.id, { managerId: e.target.value })}
                                                         >
                                                             <option value="">لا يوجد</option>
-                                                            {config.people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                                                            {availablePeople.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                                                         </select>
                                                     </div>
                                                     <div>
                                                         <label className="text-[10px] font-bold text-gray-400 block mb-1">النواب (متعدد):</label>
                                                         <div className="flex flex-wrap gap-1.5 bg-white dark:bg-gray-800 p-2 rounded-lg border border-gray-100 dark:border-gray-700">
-                                                            {config.people.map(person => {
+                                                            {availablePeople.map(person => {
                                                                 const active = selectedDeputyIds.includes(person.id);
                                                                 return (
                                                                     <button
@@ -427,13 +778,25 @@ export default function TelegramMotherPanel() {
                                             </div>
                                         </div>
                                     );
-                                })}
+                                    })}
+                                </div>
                             </div>
                         )}
 
                         {/* B. VOLUNTEERS RULES */}
                         {activeRuleSubTab === 'volunteers' && (
                             <div className="space-y-4">
+                                <div className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800 rounded-2xl p-4">
+                                    <label className="text-[10px] font-bold text-orange-500 block mb-2">البوت المستخدم لإشعارات طلبات التطوع:</label>
+                                    <select
+                                        className="w-full p-3 bg-white dark:bg-gray-800 rounded-xl text-sm outline-none border border-orange-100 dark:border-orange-800"
+                                        value={DEPARTMENTS.filter((dept) => dept.id !== "hr").map((dept) => config.rules.volunteers[dept.id]?.botId || "").find(Boolean) || ""}
+                                        onChange={e => applyBotToVolunteerRules(e.target.value)}
+                                    >
+                                        <option value="">اختر البوت...</option>
+                                        {config.bots.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                    </select>
+                                </div>
                                 <div className="bg-orange-50 dark:bg-orange-900/10 text-orange-700 dark:text-orange-300 border border-orange-100 dark:border-orange-800 rounded-xl px-4 py-3 text-xs font-bold">
                                     لو لم تختار مستلمين لطلبات التطوع، سيتم الإرسال تلقائيا لرئيس القسم ونوابه من تبويب رؤساء الأقسام.
                                 </div>
@@ -454,7 +817,8 @@ export default function TelegramMotherPanel() {
                                                     <option value="">البوت...</option>
                                                     {config.bots.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                                                 </select>
-                                                {config.people.map(person => (
+                                                {availablePeople.map(person => {
+                                                    return (
                                                     <button 
                                                         key={person.id}
                                                         onClick={() => {
@@ -467,7 +831,8 @@ export default function TelegramMotherPanel() {
                                                     >
                                                         {person.name}
                                                     </button>
-                                                ))}
+                                                    );
+                                                })}
                                             </div>
                                         </div>
                                     );
@@ -478,6 +843,17 @@ export default function TelegramMotherPanel() {
                         {/* C. WAMAN AHYAAHA RULES */}
                         {activeRuleSubTab === 'waman' && (
                             <div className="space-y-6">
+                                <div className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-800 rounded-2xl p-4">
+                                    <label className="text-[10px] font-bold text-red-500 block mb-2">البوت المستخدم لإشعارات ومن أحياها:</label>
+                                    <select
+                                        className="w-full p-3 bg-white dark:bg-gray-800 rounded-xl text-sm outline-none border border-red-100 dark:border-red-800"
+                                        value={config.rules.wamanAhyaaha.distress.botId || config.rules.wamanAhyaaha.donors.botId || ""}
+                                        onChange={e => applyBotToWamanRules(e.target.value)}
+                                    >
+                                        <option value="">اختر البوت...</option>
+                                        {config.bots.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                    </select>
+                                </div>
                                 <div className="bg-red-50 dark:bg-red-900/10 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-800 rounded-xl px-4 py-3 text-xs font-bold">
                                     لو لم تختار مستلمين هنا، سيتم الإرسال لرئيس ونواب قسم ومن أحياها من تبويب رؤساء الأقسام.
                                 </div>
@@ -499,7 +875,8 @@ export default function TelegramMotherPanel() {
                                     </div>
                                     <p className="text-xs text-red-600/70 mb-2 font-bold">المستلمون:</p>
                                     <div className="flex flex-wrap gap-2">
-                                        {config.people.map(person => (
+                                        {availablePeople.map(person => {
+                                            return (
                                             <button 
                                                 key={person.id}
                                                 onClick={() => {
@@ -511,7 +888,8 @@ export default function TelegramMotherPanel() {
                                             >
                                                 {person.name}
                                             </button>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
 
@@ -533,7 +911,8 @@ export default function TelegramMotherPanel() {
                                     </div>
                                     <p className="text-xs text-green-600/70 mb-2 font-bold">المستلمون:</p>
                                     <div className="flex flex-wrap gap-2">
-                                        {config.people.map(person => (
+                                        {availablePeople.map(person => {
+                                            return (
                                             <button 
                                                 key={person.id}
                                                 onClick={() => {
@@ -545,9 +924,136 @@ export default function TelegramMotherPanel() {
                                             >
                                                 {person.name}
                                             </button>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 </div>
+                            </div>
+                        )}
+
+                        {activeRuleSubTab === 'custom' && (
+                            <div className="space-y-6">
+                                <div className="bg-indigo-50 dark:bg-indigo-900/10 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-800">
+                                    <h4 className="font-bold text-indigo-800 dark:text-indigo-300 mb-3 flex items-center gap-2"><Plus size={16}/> إضافة مسار إرسال جديد</h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3">
+                                        <input
+                                            className="p-3 bg-white dark:bg-gray-800 rounded-xl border-none outline-none shadow-sm text-sm"
+                                            placeholder="اسم المسار (مثلا: بوت الميزان، بوت الإعلام، بوت الطوارئ)"
+                                            value={newCustomRouteName}
+                                            onChange={e => setNewCustomRouteName(e.target.value)}
+                                        />
+                                        <button onClick={addCustomRoute} className="bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition px-6 py-3">إضافة مسار</button>
+                                    </div>
+                                </div>
+
+                                {(config.rules.customRoutes || []).map((route) => (
+                                    <div key={route.id} className="bg-gray-50 dark:bg-gray-900/50 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-5">
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                            <div>
+                                                <p className="font-bold text-sm">{route.name}</p>
+                                                <p className="text-[10px] text-gray-400">اربط المسار ببوت من المكتبة وحدد هل الإرسال عام أو حسب كل قسم.</p>
+                                            </div>
+                                            <button onClick={() => deleteCustomRoute(route.id)} className="self-start md:self-auto p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition" title="حذف"><Trash2 size={18}/></button>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                            <input
+                                                className="p-2 bg-white dark:bg-gray-800 rounded-lg text-xs outline-none border border-gray-100 dark:border-gray-700"
+                                                value={route.name}
+                                                onChange={e => updateRule('customRoutes', route.id, { name: e.target.value })}
+                                            />
+                                            <select
+                                                className="p-2 bg-white dark:bg-gray-800 rounded-lg text-xs outline-none border border-gray-100 dark:border-gray-700"
+                                                value={route.botId}
+                                                onChange={e => updateRule('customRoutes', route.id, { botId: e.target.value })}
+                                            >
+                                                <option value="">اختر البوت...</option>
+                                                {config.bots.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                                            </select>
+                                            <select
+                                                className="p-2 bg-white dark:bg-gray-800 rounded-lg text-xs outline-none border border-gray-100 dark:border-gray-700"
+                                                value={route.scope}
+                                                onChange={e => updateRule('customRoutes', route.id, { scope: e.target.value })}
+                                            >
+                                                <option value="general">عام</option>
+                                                <option value="departments">حسب القسم</option>
+                                            </select>
+                                        </div>
+
+                                        {route.scope === 'general' ? (
+                                            <div className="space-y-2">
+                                                <label className="text-[10px] font-bold text-gray-400 block">المستلمون العامون:</label>
+                                                <div className="flex flex-wrap gap-2 bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
+                                                    {availablePeople.map(person => {
+                                                        const active = route.recipientIds.includes(person.id);
+                                                        return (
+                                                            <button
+                                                                key={person.id}
+                                                                onClick={() => {
+                                                                    const recipientIds = active
+                                                                        ? route.recipientIds.filter((id) => id !== person.id)
+                                                                        : [...route.recipientIds, person.id];
+                                                                    updateRule('customRoutes', route.id, { recipientIds, recipientMode: 'custom' });
+                                                                }}
+                                                                className={`px-3 py-1.5 rounded-full text-[10px] font-bold transition ${active ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300'}`}
+                                                            >
+                                                                {person.name}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                {DEPARTMENTS.map((dept) => {
+                                                    const target = route.targets.find((item) => item.departmentId === dept.id) || { departmentId: dept.id, recipientMode: 'manager_and_deputy', recipientIds: [] };
+                                                    return (
+                                                        <div key={dept.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 space-y-3">
+                                                            <div className="flex items-center gap-2">
+                                                                <div className={`${dept.bgClass} ${dept.primaryColor} p-1.5 rounded-lg`}><dept.icon size={16}/></div>
+                                                                <p className="text-xs font-bold">{dept.nameAr}</p>
+                                                            </div>
+                                                            <select
+                                                                className="w-full p-2 bg-gray-50 dark:bg-gray-900 rounded-lg text-xs outline-none border border-gray-100 dark:border-gray-700"
+                                                                value={target.recipientMode}
+                                                                onChange={e => updateCustomRouteTarget(route.id, dept.id, { recipientMode: e.target.value as any })}
+                                                            >
+                                                                <option value="manager_and_deputy">الرئيس والنواب</option>
+                                                                <option value="manager_only">الرئيس فقط</option>
+                                                                <option value="custom">مخصص</option>
+                                                            </select>
+                                                            {target.recipientMode === 'custom' && (
+                                                                <div className="flex flex-wrap gap-1.5">
+                                                                    {availablePeople.map(person => {
+                                                                        const active = target.recipientIds.includes(person.id);
+                                                                        return (
+                                                                            <button
+                                                                                key={person.id}
+                                                                                onClick={() => {
+                                                                                    const recipientIds = active
+                                                                                        ? target.recipientIds.filter((id) => id !== person.id)
+                                                                                        : [...target.recipientIds, person.id];
+                                                                                    updateCustomRouteTarget(route.id, dept.id, { recipientIds });
+                                                                                }}
+                                                                                className={`px-2.5 py-1 rounded-full text-[10px] font-bold transition ${active ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-300'}`}
+                                                                            >
+                                                                                {person.name}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+
+                                {(config.rules.customRoutes || []).length === 0 && (
+                                    <div className="text-center py-12 text-gray-400 font-bold">لا توجد مسارات مخصصة بعد</div>
+                                )}
                             </div>
                         )}
                     </div>

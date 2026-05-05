@@ -22,6 +22,19 @@ class ErrorBoundary extends Component<Props, State> {
   };
 
   private onWindowError = (event: ErrorEvent) => {
+    const isGenericCrossOriginError =
+      event.message === "Script error." &&
+      !event.filename &&
+      !event.lineno &&
+      !event.colno;
+
+    const isResourceLoadError = event.target instanceof HTMLElement;
+
+    if (isGenericCrossOriginError || isResourceLoadError) {
+      console.warn("Ignored non-fatal browser error:", event.message || event);
+      return;
+    }
+
     const raw = event.error;
     const errorObj = raw instanceof Error ? raw : new Error(event.message || "Unknown window error");
     const extra = `File: ${event.filename || "N/A"}\nLine: ${event.lineno || "N/A"}\nColumn: ${event.colno || "N/A"}`;
@@ -36,6 +49,16 @@ class ErrorBoundary extends Component<Props, State> {
 
   private onUnhandledRejection = (event: PromiseRejectionEvent) => {
     const reason = event.reason;
+    if (
+      reason &&
+      typeof reason === "object" &&
+      "message" in reason &&
+      String((reason as { message?: unknown }).message).includes("Firebase Analytics")
+    ) {
+      console.warn("Ignored non-fatal analytics promise rejection:", reason);
+      return;
+    }
+
     const errorObj = reason instanceof Error
       ? reason
       : new Error(typeof reason === "string" ? reason : JSON.stringify(reason, null, 2));

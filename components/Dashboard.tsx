@@ -341,10 +341,11 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
     const unsubscribe = onSnapshot(q, (snapshot) => {
       snapshot.docChanges().forEach((change) => {
         if (change.type === "added" && onSendTelegram && !change.doc.metadata.fromCache && telegramConfig?.rules) {
-          const data = change.doc.data();
+          const rawData = change.doc.data();
+          const data = normalizeVolunteerSubmission(change.doc.id, rawData, "current", "submissions");
           
           // Avoid processing old documents on initial load (check if created within last minute)
-          const createdAt = data.createdAt?.seconds ? data.createdAt.seconds * 1000 : Date.now();
+          const createdAt = data.createdAtMs || (rawData.createdAt?.seconds ? rawData.createdAt.seconds * 1000 : Date.now());
           if (Date.now() - createdAt > 60000) return;
 
           // Display toast notification for new request
@@ -361,7 +362,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
 
           // Map section name to ID if necessary
           let targetDeptId = data.section;
-          const deptObj = DEPARTMENTS.find(d => d.nameAr === data.section || d.name === data.section || d.id === data.section);
+          const deptObj = DEPARTMENTS.find(d => d.nameAr === data.rawSection || d.name === data.rawSection || d.id === data.rawSection || d.id === data.section);
           if (deptObj) targetDeptId = deptObj.id;
 
           // --- NEW RULE-BASED TELEGRAM LOGIC ---
@@ -382,10 +383,15 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                       msg += `📝 <b>السبب:</b> ${data.reason}\n`;
                       if (data.pdfUrl) msg += `📄 <b>السيرة الذاتية:</b> <a href="${data.pdfUrl}">تحميل PDF</a>`;
 
-                      recipientChatIds.forEach((chatId: string) => {
-                          onSendTelegram(chatId, msg, botToken);
-                      });
+                      sendTelegramToChatIds(onSendTelegram, recipientChatIds, msg, botToken);
                   }
+              } else {
+                  console.warn("No Telegram volunteer recipients resolved", {
+                      targetDeptId,
+                      rawSection: data.rawSection,
+                      volunteerRules: telegramConfig?.rules?.volunteers,
+                      people: telegramConfig?.people
+                  });
               }
           }
         }
@@ -791,12 +797,8 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
         
         // Telegram Notification
         if (onSendTelegram) {
-            const artDept = telegramConfig?.generalContacts?.find((c: any) => c.departmentId === 'art');
-            const contacts = artDept?.contacts || [];
-            
-            // Filter for Manager or Deputy if roles are defined, or send to all if not specified
-            const targetContacts = contacts.filter((c: any) => c.role === 'manager' || c.role === 'deputy');
-            const finalContacts = targetContacts.length > 0 ? targetContacts : contacts;
+            const route = resolveDepartmentLeadership(telegramConfig, 'art', 'manager_and_deputy');
+            const finalContacts = route.chatIds.map((chatId: string) => ({ chatId }));
 
             if (finalContacts.length > 0) {
                 let msg = `🎨 <b>مهمة جديدة للإخراج الفني</b>\n\n` +
@@ -811,7 +813,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                 msg += `👤 <b>بواسطة:</b> ${userProfile?.displayName || user.email}`;
                 
                 finalContacts.forEach((contact: any) => {
-                    onSendTelegram(contact.chatId, msg);
+                    onSendTelegram(contact.chatId, msg, route.botToken);
                 });
             }
         }
@@ -917,10 +919,20 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
 
           try {
               const deptRule = telegramConfig?.rules?.departments?.[finalTargetDeptId];
-              const notifyMode = deptRule?.forwardNotifyMode || 'manager_and_deputy';
+              const notifyMode = 'manager_and_deputy';
               const route = resolveDepartmentLeadership(telegramConfig, finalTargetDeptId, notifyMode);
-              sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
-              console.log(`Telegram notifications sent to ${route.chatIds.length} targets for ${finalTargetDeptId}`);
+              const sent = sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
+              if (!sent) {
+                  console.warn("No Telegram forwarding recipients resolved", {
+                      finalTargetDeptId,
+                      notifyMode,
+                      departmentRule: deptRule,
+                      people: telegramConfig?.people
+                  });
+                  toast.error("تم التحويل، لكن لا يوجد مستلم تيليجرام مضبوط لهذا القسم");
+              } else {
+                  console.log(`Telegram notifications sent to ${route.chatIds.length} targets for ${finalTargetDeptId}`);
+              }
 
           } catch(e) { console.error('Telegram forwarding logic error:', e); }
       }

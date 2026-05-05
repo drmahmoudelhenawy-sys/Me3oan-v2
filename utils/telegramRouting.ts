@@ -2,6 +2,24 @@ export type TelegramNotifyMode = "manager_only" | "manager_and_deputy";
 export type WamanNoticeType = "distress" | "donors";
 
 const unique = <T,>(items: T[]) => Array.from(new Set(items.filter(Boolean)));
+const envVolunteerBotToken = (import.meta as any).env?.VITE_TELEGRAM_VOLUNTEER_BOT_TOKEN || "";
+
+const normalizeTelegramDeptId = (deptId: string = "") => {
+  const value = String(deptId || "").trim();
+  const lower = value.toLowerCase();
+
+  if (!value) return "general";
+  if (["edu", "education", "educational", "تعليمي", "التعليمي"].includes(lower) || value.includes("تعليم")) return "educational";
+  if (["art", "design", "media"].includes(lower) || value.includes("فني") || value.includes("إخراج") || value.includes("اخراج")) return "art";
+  if (["medical", "medicine", "med"].includes(lower) || value.includes("طبي")) return "medical";
+  if (["dawah", "daawa", "دعوي", "دعوة"].includes(lower) || value.includes("دعوي") || value.includes("دعوة")) return "dawah";
+  if (["charity", "خيرى", "خيري"].includes(lower) || value.includes("خيري") || value.includes("خيرى")) return "charity";
+  if (["blood", "waman", "waman_ahyaaha", "ومن احياها", "ومن أحياها"].includes(lower) || value.includes("أحياها") || value.includes("احياها")) return "waman_ahyaaha";
+  if (["hr", "human_resources", "resources"].includes(lower) || value.includes("الموارد")) return "hr";
+  if (["management", "admin", "senior_management"].includes(lower) || value.includes("الإدارة") || value.includes("الادارة")) return "management";
+
+  return value;
+};
 
 export const getTelegramBotToken = (telegramConfig: any, botId?: string) => {
   if (!telegramConfig) return "";
@@ -13,7 +31,12 @@ export const resolveRecipientChatIds = (telegramConfig: any, recipientIds: strin
   if (!telegramConfig?.people) return [];
   return unique(
     recipientIds
-      .map((recipientId) => telegramConfig.people.find((person: any) => person.id === recipientId)?.chatId)
+      .map((recipientId) => {
+        const person = telegramConfig.people.find((p: any) => (
+          p.chatId && (p.id === recipientId || p.uid === recipientId)
+        ));
+        return person?.chatId || (/^-?\d+$/.test(String(recipientId)) ? recipientId : "");
+      })
       .map((chatId) => (chatId ? String(chatId) : ""))
   );
 };
@@ -23,7 +46,8 @@ export const getDepartmentLeadershipIds = (
   deptId: string,
   mode: TelegramNotifyMode = "manager_and_deputy"
 ) => {
-  const rule = telegramConfig?.rules?.departments?.[deptId];
+  const normalizedDeptId = normalizeTelegramDeptId(deptId);
+  const rule = telegramConfig?.rules?.departments?.[normalizedDeptId];
   if (!rule) return [];
 
   const deputyIds = Array.isArray(rule.deputyIds)
@@ -43,8 +67,9 @@ export const resolveDepartmentLeadership = (
   deptId: string,
   mode: TelegramNotifyMode = "manager_and_deputy"
 ) => {
-  const rule = telegramConfig?.rules?.departments?.[deptId];
-  const recipientIds = getDepartmentLeadershipIds(telegramConfig, deptId, mode);
+  const normalizedDeptId = normalizeTelegramDeptId(deptId);
+  const rule = telegramConfig?.rules?.departments?.[normalizedDeptId];
+  const recipientIds = getDepartmentLeadershipIds(telegramConfig, normalizedDeptId, mode);
 
   return {
     botToken: getTelegramBotToken(telegramConfig, rule?.botId),
@@ -53,14 +78,21 @@ export const resolveDepartmentLeadership = (
 };
 
 export const resolveVolunteerRoute = (telegramConfig: any, deptId: string) => {
-  const volunteerRule = telegramConfig?.rules?.volunteers?.[deptId] || telegramConfig?.rules?.volunteers?.general;
+  const normalizedDeptId = normalizeTelegramDeptId(deptId);
+  const volunteerRule = telegramConfig?.rules?.volunteers?.[normalizedDeptId];
   const explicitIds = volunteerRule?.recipientIds || [];
-  const fallbackIds = getDepartmentLeadershipIds(telegramConfig, deptId, "manager_and_deputy");
-  const departmentRule = telegramConfig?.rules?.departments?.[deptId];
+  const recipientIds = explicitIds.length
+    ? explicitIds
+    : getDepartmentLeadershipIds(telegramConfig, normalizedDeptId, "manager_and_deputy");
+  const departmentRule = telegramConfig?.rules?.departments?.[normalizedDeptId];
+  const selectedBotId = volunteerRule?.botId || departmentRule?.botId;
+  const selectedBotToken = selectedBotId
+    ? telegramConfig?.bots?.find((bot: any) => bot.id === selectedBotId)?.token || ""
+    : "";
 
   return {
-    botToken: getTelegramBotToken(telegramConfig, volunteerRule?.botId || departmentRule?.botId),
-    chatIds: resolveRecipientChatIds(telegramConfig, explicitIds.length ? explicitIds : fallbackIds)
+    botToken: selectedBotToken || envVolunteerBotToken || telegramConfig?.defaultBotToken || "",
+    chatIds: resolveRecipientChatIds(telegramConfig, recipientIds)
   };
 };
 
@@ -82,7 +114,7 @@ export const sendTelegramToChatIds = (
   message: string,
   botToken?: string
 ) => {
-  if (!onSendTelegram || !botToken || chatIds.length === 0) return false;
+  if (!onSendTelegram || chatIds.length === 0) return false;
   unique(chatIds).forEach((chatId) => onSendTelegram(chatId, message, botToken));
   return true;
 };

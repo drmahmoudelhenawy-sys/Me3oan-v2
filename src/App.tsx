@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { User, onAuthStateChanged, signInAnonymously, signOut } from "firebase/auth";
 import { auth, db } from "../services/firebase";
-import { doc, getDoc } from "firebase/firestore";
+import { collection, doc, onSnapshot } from "firebase/firestore";
 import AuthScreen from "../components/AuthScreen";
 import SecretCodeScreen from "../components/SecretCodeScreen";
 import Dashboard from "../components/Dashboard";
@@ -11,10 +11,36 @@ import PublicOrgStructure from "../components/PublicOrgStructure";
 import WamanAhyaahaSystem from "../components/WamanAhyaahaSystem"; 
 import IntroScreen from "../components/IntroScreen";
 import { Loader2, ArrowRight } from "lucide-react";
+import { safeStorage } from "../utils/browserStorage";
 
 
 // ── show intro only once per browser session ──────────────────────────────────
 const INTRO_KEY = "ma3wan_intro_v2_shown";
+
+const getSiteUserTelegramId = (user: any) =>
+  String(user?.telegramId || user?.chatId || user?.telegramChatId || "").trim();
+
+const mergeTelegramConfigWithSiteUsers = (telegramConfig: any = {}, siteUsers: any[] = []) => {
+  const manualPeople = Array.isArray(telegramConfig.people) ? telegramConfig.people : [];
+  const sitePeople = siteUsers
+    .map((siteUser) => {
+      const chatId = getSiteUserTelegramId(siteUser);
+      if (!chatId) return null;
+      const uid = siteUser.uid || siteUser.id;
+      return {
+        id: `site_${uid}`,
+        name: siteUser.displayName || siteUser.email || "مستخدم بدون اسم",
+        chatId,
+        source: "site"
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    ...telegramConfig,
+    people: [...manualPeople, ...sitePeople]
+  };
+};
 
 export default function App() {
   const [user, setUser]                   = useState<User | null>(null);
@@ -28,7 +54,7 @@ export default function App() {
     // Skip intro on public URL params (donor form, blood admin)
     const params = new URLSearchParams(window.location.search);
     if (params.get('view')) return false;
-    return !sessionStorage.getItem(INTRO_KEY);
+    return !safeStorage.get("sessionStorage", INTRO_KEY);
   });
 
   useEffect(() => {
@@ -45,7 +71,7 @@ export default function App() {
 
   useEffect(() => {
     // 1. Check Local Verification
-    const verifiedStatus = localStorage.getItem("ma3wan_code_verified");
+    const verifiedStatus = safeStorage.get("localStorage", "ma3wan_code_verified");
     if (verifiedStatus === "full" || verifiedStatus === "true") {
       setIsCodeVerified(true);
       setAccessLevel('full');
@@ -57,7 +83,7 @@ export default function App() {
     // 2. Listen for Auth
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       // Re-verify code status (in case AuthScreen set it during login)
-      const verifiedStatus = localStorage.getItem("ma3wan_code_verified");
+      const verifiedStatus = safeStorage.get("localStorage", "ma3wan_code_verified");
       if (verifiedStatus === "full" || verifiedStatus === "true") {
         setIsCodeVerified(true);
         setAccessLevel('full');
@@ -67,14 +93,33 @@ export default function App() {
       setAuthLoading(false);
     });
 
-    // 3. Fetch Config
-    const fetchConfig = async () => {
-        try {
-            const docSnap = await getDoc(doc(db, "app_settings", "telegram_config"));
-            if (docSnap.exists()) setTelegramConfig(docSnap.data());
-        } catch(e) { console.error(e); }
+    // 3. Keep Telegram config live and merge site users with Telegram IDs.
+    let latestTelegramConfig: any = {};
+    let latestSiteUsers: any[] = [];
+    const publishTelegramConfig = () => {
+      setTelegramConfig(mergeTelegramConfigWithSiteUsers(latestTelegramConfig, latestSiteUsers));
     };
-    fetchConfig();
+
+    const unsubscribeTelegramConfig = onSnapshot(
+        doc(db, "app_settings", "telegram_config"),
+        (docSnap) => {
+            latestTelegramConfig = docSnap.exists() ? docSnap.data() : {};
+            publishTelegramConfig();
+        },
+        (error) => console.error("Telegram config listener error:", error)
+    );
+
+    const unsubscribeSiteUsers = onSnapshot(
+        collection(db, "users"),
+        (snapshot) => {
+            latestSiteUsers = snapshot.docs.map((userDoc) => ({
+              id: userDoc.id,
+              ...userDoc.data()
+            }));
+            publishTelegramConfig();
+        },
+        (error) => console.error("Users listener error:", error)
+    );
     
     // 4. Routing Logic
     const params = new URLSearchParams(window.location.search);
@@ -86,12 +131,16 @@ export default function App() {
         }
     }
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      unsubscribeTelegramConfig();
+      unsubscribeSiteUsers();
+    };
   }, []);
 
 
   const handleIntroFinish = useCallback(() => {
-    sessionStorage.setItem(INTRO_KEY, "1");
+    safeStorage.set("sessionStorage", INTRO_KEY, "1");
     setShowIntro(false);
   }, []);
 
@@ -105,7 +154,7 @@ export default function App() {
       }
       
       try {
-        await fetch(`https://api.telegram.org/bot${tokenToUse}/sendMessage`, {
+        const response = await fetch(`https://api.telegram.org/bot${tokenToUse}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
@@ -115,6 +164,9 @@ export default function App() {
               disable_web_page_preview: false 
             })
         });
+        if (!response.ok) {
+          console.warn("Telegram Send Error:", await response.text());
+        }
       } catch (e) { console.error("Telegram Send Error:", e); }
   };
 
@@ -133,7 +185,7 @@ export default function App() {
   };
 
   const exitPublicView = async () => {
-      localStorage.removeItem('ma3wan_blood_admin'); 
+      safeStorage.remove("localStorage", "ma3wan_blood_admin"); 
       if (window.location.search.includes('view=')) {
           window.history.replaceState({}, document.title, window.location.pathname);
       }
@@ -219,7 +271,7 @@ export default function App() {
     );
   }
 
-  if (!user || (user.isAnonymous && localStorage.getItem('ma3wan_magic_session') !== 'true')) {
+  if (!user || (user.isAnonymous && safeStorage.get("localStorage", "ma3wan_magic_session") !== "true")) {
     return (
         <AuthScreen 
             onGuestIdentity={() => handlePublicAccess('identity')}

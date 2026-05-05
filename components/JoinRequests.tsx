@@ -110,12 +110,13 @@ export default function JoinRequests({ user, userProfile }: JoinRequestsProps) {
     const filteredSubmissions = activeTab === 'all' 
         ? submissions 
         : submissions.filter(s => {
-            if (s.section === activeTab) return true;
+            const section = String(s.section || "");
+            if (section === activeTab) return true;
             const dept = JOIN_DEPARTMENTS.find(d => d.id === activeTab);
             if (!dept) return false;
             // Check for exact match on ID, NameAr, Name, or partial match if it's educational
-            return s.section === dept.nameAr || s.section === dept.name || s.section === dept.id || 
-                   (dept.id === 'educational' && (s.section.includes('تعليم') || s.section.toLowerCase().includes('education')));
+            return section === dept.nameAr || section === dept.name || section === dept.id || 
+                   (dept.id === 'educational' && (section.includes('تعليم') || section.toLowerCase().includes('education')));
         });
 
     return (
