@@ -46,7 +46,7 @@ import {
   sendTelegramToChatIds,
   type TelegramNotifyMode
 } from "../utils/telegramRouting";
-import { getSubmissionCreatedMs, normalizeVolunteerSubmission } from "../utils/volunteerSubmissions";
+import { formatVolunteerSubmissionForTelegram, getSubmissionCreatedMs, normalizeVolunteerSubmission } from "../utils/volunteerSubmissions";
 import toast, { Toaster } from 'react-hot-toast';
 
 const DEFAULT_MEETING_REMINDERS = [2880, 1440, 60, 30];
@@ -378,12 +378,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
                   const recipientChatIds = volunteerRoute.chatIds;
 
                   if (recipientChatIds.length > 0) {
-                      let msg = `🔔 <b>طلب تطوع جديد لقسم ${deptObj?.nameAr || targetDeptId}</b>\n`;
-                      msg += `👤 <b>الاسم:</b> ${data.name}\n`;
-                      msg += `📱 <b>الهاتف:</b> ${data.phone}\n`;
-                      msg += `🎓 <b>الجامعة:</b> ${data.university} - ${data.faculty}\n`;
-                      msg += `📝 <b>السبب:</b> ${data.reason}\n`;
-                      if (data.pdfUrl) msg += `📄 <b>السيرة الذاتية:</b> <a href="${data.pdfUrl}">تحميل PDF</a>`;
+                      const msg = formatVolunteerSubmissionForTelegram(data, deptObj?.nameAr || targetDeptId);
 
                       sendTelegramToChatIds(onSendTelegram, recipientChatIds, msg, botToken);
                   }
@@ -421,12 +416,7 @@ export default function Dashboard({ user, telegramConfig, onSendTelegram, access
             style: { borderRadius: '10px', background: '#333', color: '#fff' }
         });
 
-        let msg = `🔔 <b>طلب تطوع جديد لقسم ${deptObj?.nameAr || targetDeptId}</b>\n`;
-        msg += `👤 <b>الاسم:</b> ${data.name || "-"}\n`;
-        msg += `📱 <b>الهاتف:</b> ${data.phone || "-"}\n`;
-        msg += `🎓 <b>الجامعة:</b> ${data.university || "-"}${data.faculty ? ` - ${data.faculty}` : ""}\n`;
-        msg += `📝 <b>السبب:</b> ${data.reason || "-"}\n`;
-        if (data.pdfUrl) msg += `📄 <b>السيرة الذاتية:</b> <a href="${data.pdfUrl}">تحميل PDF</a>`;
+        const msg = formatVolunteerSubmissionForTelegram(data, deptObj?.nameAr || targetDeptId);
         sendTelegramToChatIds(onSendTelegram, volunteerRoute.chatIds, msg, volunteerRoute.botToken);
     };
 

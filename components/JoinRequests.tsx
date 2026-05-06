@@ -2,11 +2,11 @@ import React, { useState, useEffect } from "react";
 import { collection, onSnapshot, query, orderBy, doc, deleteDoc } from "firebase/firestore";
 import { db } from "../services/firebase";
 import { recruitmentDb } from "../services/recruitmentFirebase";
-import { Users, Mail, Calendar, Loader2, FileText, X, Download, FileSpreadsheet, Phone, School, Briefcase, Trash2 } from "lucide-react";
+import { Users, Calendar, FileText, X, Download, FileSpreadsheet, Trash2 } from "lucide-react";
 import { DEPARTMENTS } from "../utils/constants";
 import { User } from 'firebase/auth';
 import { exportCsv } from "../utils/csvExport";
-import { normalizeVolunteerSubmission, sortVolunteerSubmissions } from "../utils/volunteerSubmissions";
+import { getVolunteerSubmissionRows, normalizeVolunteerSubmission, sortVolunteerSubmissions } from "../utils/volunteerSubmissions";
 
 const JOIN_DEPARTMENTS = DEPARTMENTS.filter(d => d.id !== 'hr' && d.id !== 'management');
 
@@ -73,16 +73,21 @@ export default function JoinRequests({ user, userProfile }: JoinRequestsProps) {
 
     const handleExport = () => {
         const dataToExport = filteredSubmissions.map(s => ({
-            'الاسم': s.name,
-            'البريد الإلكتروني': s.email,
-            'رقم الهاتف': s.phone,
+            'الاسم ثنائي': s.name,
+            'رقم الواتساب': s.phone,
+            'السن': s.age,
+            'النوع': s.gender,
             'الجامعة': s.university,
-            'الكلية': s.faculty,
-            'السنة الدراسية': s.year,
-            'سبب الانضمام': s.reason,
-            'الخبرات السابقة': s.experience,
+            'الكلية / الجامعة': s.faculty,
+            'المحافظة': s.governorate,
+            'الفرقة الدراسية': s.year,
+            'المهارات': s.skills,
+            'معرف تيليجرام': s.telegramUsername,
+            'كيف تعرفت على معاون؟': s.referralSource,
+            'لماذا تود الانضمام للفريق؟': s.reason,
+            'نبذة عنك': s.experience,
             'تاريخ التقديم': formatDate(s.createdAt),
-            'رابط الـPDF': s.pdfUrl
+            'رابط السيرة الذاتية PDF': s.pdfUrl
         }));
         exportCsv(dataToExport, `طلبات_تطوع_${activeTab}_${new Date().toLocaleDateString('ar-EG')}.csv`);
     };
@@ -149,14 +154,19 @@ export default function JoinRequests({ user, userProfile }: JoinRequestsProps) {
                 </div>
             )}
             <div className="overflow-x-auto rounded-[2rem] bg-white dark:bg-gray-800 shadow-sm border">
-                <table className="w-full text-right min-w-[1100px]">
+                <table className="w-full text-right min-w-[1500px]">
                     <thead className="bg-gray-50 dark:bg-gray-900/50 text-xs font-bold uppercase">
                         <tr>
                             <th className="px-6 py-4">الاسم</th>
-                            <th className="px-6 py-4">رقم الهاتف</th>
+                            <th className="px-6 py-4">رقم الواتساب</th>
+                            <th className="px-6 py-4">السن</th>
+                            <th className="px-6 py-4">النوع</th>
                             <th className="px-6 py-4">الجامعة</th>
                             <th className="px-6 py-4">الكلية</th>
+                            <th className="px-6 py-4">المحافظة</th>
                             <th className="px-6 py-4">الفرقة</th>
+                            <th className="px-6 py-4">المهارات</th>
+                            <th className="px-6 py-4">تيليجرام</th>
                             <th className="px-6 py-4">السيرة الذاتية (PDF)</th>
                             <th className="px-6 py-4">وقت الإرسال</th>
                             <th className="px-6 py-4"></th>
@@ -170,9 +180,14 @@ export default function JoinRequests({ user, userProfile }: JoinRequestsProps) {
                                     <p className="text-xs text-gray-500">{req.email || "-"}</p>
                                 </td>
                                 <td className="px-6 py-4 text-sm font-bold dir-ltr">{req.phone || "-"}</td>
+                                <td className="px-6 py-4 text-sm"><p>{req.age || "-"}</p></td>
+                                <td className="px-6 py-4 text-sm"><p>{req.gender || "-"}</p></td>
                                 <td className="px-6 py-4 text-sm"><p>{req.university || "-"}</p></td>
                                 <td className="px-6 py-4 text-sm"><p>{req.faculty || "-"}</p></td>
+                                <td className="px-6 py-4 text-sm"><p>{req.governorate || "-"}</p></td>
                                 <td className="px-6 py-4 text-sm"><p>{req.year || "-"}</p></td>
+                                <td className="px-6 py-4 text-sm max-w-[220px]"><p className="line-clamp-2">{req.skills || "-"}</p></td>
+                                <td className="px-6 py-4 text-sm dir-ltr">{req.telegramUsername || "-"}</td>
                                 <td className="px-6 py-4">
                                     {req.pdfUrl ? (
                                         <a href={req.pdfUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2 px-3 py-1 text-xs font-bold bg-red-100 text-red-700 rounded-full hover:bg-red-200">
@@ -202,14 +217,26 @@ export default function JoinRequests({ user, userProfile }: JoinRequestsProps) {
                             <h3 className="font-bold text-2xl">تفاصيل الطلب</h3>
                             <button onClick={() => setSelectedSubmission(null)} className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"><X/></button>
                         </div>
-                        <div className="min-h-0 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-6 text-sm p-6 sm:p-8 pt-0 custom-scrollbar">
-                            <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><Users className="text-indigo-500" size={20}/><div><p className="font-bold">الاسم</p><p>{selectedSubmission.name}</p></div></div>
-                            <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><Mail className="text-indigo-500" size={20}/><div><p className="font-bold">البريد</p><p>{selectedSubmission.email}</p></div></div>
-                            <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><Phone className="text-indigo-500" size={20}/><div><p className="font-bold">الهاتف</p><p>{selectedSubmission.phone}</p></div></div>
-                            <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><School className="text-indigo-500" size={20}/><div><p className="font-bold">الجامعة/الكلية</p><p>{`${selectedSubmission.university} - ${selectedSubmission.faculty}`}</p></div></div>
-                            <div className="flex items-center gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><Calendar className="text-indigo-500" size={20}/><div><p className="font-bold">الفرقة</p><p>{selectedSubmission.year || "-"}</p></div></div>
-                            <div className="md:col-span-2 flex items-start gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><FileText className="text-indigo-500 mt-1" size={20}/><div><p className="font-bold">لماذا تريد الانضمام؟</p><p className="whitespace-pre-wrap">{selectedSubmission.reason}</p></div></div>
-                            <div className="md:col-span-2 flex items-start gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl"><Briefcase className="text-indigo-500 mt-1" size={20}/><div><p className="font-bold">الخبرات السابقة</p><p className="whitespace-pre-wrap">{selectedSubmission.experience}</p></div></div>
+                        <div className="min-h-0 overflow-y-auto grid grid-cols-1 md:grid-cols-2 gap-4 text-sm p-6 sm:p-8 pt-0 custom-scrollbar">
+                            {getVolunteerSubmissionRows(selectedSubmission).map(([label, value]) => {
+                                const displayValue = label === "تاريخ التقديم" ? formatDate(value) : value;
+                                const isLong = ["المهارات", "كيف تعرفت على معاون؟", "لماذا تود الانضمام للفريق؟", "نبذة عنك", "السيرة الذاتية (PDF)"].includes(label);
+                                return (
+                                    <div key={label} className={`${isLong ? "md:col-span-2" : ""} flex items-start gap-3 bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl`}>
+                                        <FileText className="text-indigo-500 mt-1 shrink-0" size={20}/>
+                                        <div className="min-w-0">
+                                            <p className="font-bold">{label}</p>
+                                            {label === "السيرة الذاتية (PDF)" && value ? (
+                                                <a href={String(value)} target="_blank" rel="noopener noreferrer" className="text-red-600 font-bold inline-flex items-center gap-2 mt-1">
+                                                    <Download size={14} /> تحميل السيرة الذاتية
+                                                </a>
+                                            ) : (
+                                                <p className="whitespace-pre-wrap break-words">{displayValue || "-"}</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>

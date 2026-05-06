@@ -8,6 +8,19 @@ const firstValue = (data: any, keys: string[]) => {
   return "";
 };
 
+const listValue = (data: any, keys: string[]) => {
+  const value = firstValue(data, keys);
+  if (Array.isArray(value)) return value.filter(Boolean).join("، ");
+  return value;
+};
+
+const escapeHtml = (value: any) => String(value ?? "")
+  .replace(/&/g, "&amp;")
+  .replace(/</g, "&lt;")
+  .replace(/>/g, "&gt;");
+
+const formatLine = (label: string, value: any) => `• <b>${label}:</b> ${escapeHtml(value || "-")}`;
+
 export const getSubmissionCreatedMs = (data: any) => {
   const value = firstValue(data, ["createdAt", "submittedAt", "timestamp", "created_at", "date"]);
   if (!value) return null;
@@ -64,11 +77,17 @@ export const normalizeVolunteerSubmission = (
     name: firstValue(data, ["name", "fullName", "displayName", "applicantName", "studentName"]),
     email: firstValue(data, ["email", "mail"]),
     phone: firstValue(data, ["phone", "phoneNumber", "mobile", "whatsapp", "whatsApp"]),
+    age: firstValue(data, ["age", "studentAge"]),
+    gender: firstValue(data, ["gender", "sex", "type"]),
     university: firstValue(data, ["university", "college", "school"]),
-    faculty: firstValue(data, ["faculty", "major", "studyField"]),
-    year: firstValue(data, ["year", "academicYear", "grade"]),
+    faculty: firstValue(data, ["faculty", "collegeName", "major", "studyField"]),
+    governorate: firstValue(data, ["governorate", "province", "city", "addressGovernorate"]),
+    year: firstValue(data, ["year", "academicYear", "grade", "studyYear", "academicLevel"]),
+    skills: listValue(data, ["skills", "selectedSkills", "abilities", "talents"]),
+    telegramUsername: firstValue(data, ["telegramUsername", "telegramUserName", "telegram", "telegramId", "userName", "username"]),
+    referralSource: firstValue(data, ["referralSource", "howDidYouKnow", "howKnow", "knownFrom", "source"]),
     reason: firstValue(data, ["reason", "motivation", "whyJoin", "joinReason", "message"]),
-    experience: firstValue(data, ["experience", "experiences", "skills", "previousExperience"]),
+    experience: firstValue(data, ["experience", "experiences", "previousExperience", "workExperience", "about", "bio", "summary"]),
     pdfUrl: firstValue(data, ["pdfUrl", "cvUrl", "resumeUrl", "fileUrl", "attachmentUrl"]),
     section: normalizeDepartmentId(rawSection),
     rawSection,
@@ -77,6 +96,41 @@ export const normalizeVolunteerSubmission = (
     source,
     collectionName
   };
+};
+
+export const getVolunteerSubmissionRows = (submission: any) => ([
+  ["الاسم ثنائي", submission.name],
+  ["رقم الواتساب", submission.phone],
+  ["السن", submission.age],
+  ["النوع", submission.gender],
+  ["الجامعة", submission.university],
+  ["الكلية / الجامعة", submission.faculty],
+  ["المحافظة", submission.governorate],
+  ["الفرقة الدراسية", submission.year],
+  ["المهارات", submission.skills],
+  ["معرف تيليجرام", submission.telegramUsername],
+  ["كيف تعرفت على معاون؟", submission.referralSource],
+  ["لماذا تود الانضمام للفريق؟", submission.reason],
+  ["نبذة عنك", submission.experience],
+  ["السيرة الذاتية (PDF)", submission.pdfUrl],
+  ["تاريخ التقديم", submission.createdAt]
+]);
+
+export const formatVolunteerSubmissionForTelegram = (submission: any, departmentName: string) => {
+  const rows = getVolunteerSubmissionRows(submission).filter(([label]) => label !== "تاريخ التقديم");
+  const lines = [
+    `🔔 <b>طلب تطوع جديد لقسم ${escapeHtml(departmentName)}</b>`,
+    ...rows
+      .filter(([label, value]) => label !== "السيرة الذاتية (PDF)" || value)
+      .map(([label, value]) => {
+        if (label === "السيرة الذاتية (PDF)") {
+          return `• <b>${label}:</b> <a href="${escapeHtml(value)}">تحميل PDF</a>`;
+        }
+        return formatLine(label, value);
+      })
+  ];
+
+  return lines.join("\n");
 };
 
 export const sortVolunteerSubmissions = (items: any[]) => {
