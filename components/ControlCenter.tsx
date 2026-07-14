@@ -2,7 +2,7 @@ import React, { useState, useEffect } from "react";
 import { 
   Users, Network, Palette, MessageCircle, Table as TableIcon, 
   UserPlus, ShieldCheck, Settings, X, ChevronRight, LayoutGrid, ClipboardList,
-  Droplet, Eye, EyeOff, Plus, Edit2, Trash2, Save, Key, RefreshCw, Check, Copy
+  Droplet, Eye, EyeOff, Plus, Edit2, Trash2, Save, Key, RefreshCw, Check, Copy, Activity
 } from "lucide-react";
 import UserManagement from "./UserManagement";
 import OrgStructureSystem from "./OrgStructureSystem";
@@ -10,6 +10,8 @@ import IdentitySystem from "./IdentitySystem";
 import AdminTable from "./AdminTable";
 import JoinRequests from "./JoinRequests";
 import TelegramMotherPanel from "./TelegramMotherPanel";
+import SystemResetPanel from "./SystemResetPanel";
+import WamanAhyaahaSystem from "./WamanAhyaahaSystem";
 import { SUPER_ADMIN_EMAIL } from "../utils/constants";
 import { db } from "../services/firebase";
 import { doc, getDoc, setDoc } from "firebase/firestore";
@@ -221,32 +223,51 @@ interface ControlCenterProps {
   userProfile: any;
   onClose?: () => void;
   initialTab?: string;
+  wamanProps?: any;
 }
 
-type AdminTab = 'users' | 'org' | 'identity' | 'telegram' | 'admin_table' | 'volunteers' | 'blood_bank';
+type AdminTab = 'org' | 'telegram' | 'admin_table' | 'volunteers' | 'blood_bank' | 'waman_system' | 'system_reset';
 
-export default function ControlCenter({ user, userProfile, onClose, initialTab }: ControlCenterProps) {
-  const [activeTab, setActiveTab] = useState<AdminTab>((initialTab as AdminTab) || 'users');
+export default function ControlCenter({ user, userProfile, onClose, initialTab, wamanProps }: ControlCenterProps) {
+  const [activeTab, setActiveTab] = useState<AdminTab>((initialTab as AdminTab) || 'org');
   const isSuperAdmin = user.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase(); // Using the official constant
 
   const tabs = [
-    { id: 'users', label: 'إدارة المستخدمين', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', desc: 'التحكم في أعضاء الفريق وصلاحياتهم', roles: ['full'] },
     { id: 'admin_table', label: 'جداول البيانات', icon: TableIcon, color: 'text-indigo-600', bg: 'bg-indigo-50', desc: 'إدارة جداول المهمات العامة والخاصة', roles: ['full', 'partial'] },
     { id: 'org', label: 'الهيكلة الإدارية', icon: Network, color: 'text-purple-600', bg: 'bg-purple-50', desc: 'عرض وتنظيم شجرة الهيكل الإداري', roles: ['full', 'partial'] },
-    { id: 'identity', label: 'الهوية البصرية', icon: Palette, color: 'text-pink-600', bg: 'bg-pink-50', desc: 'تخصيص اللوجوهات والألوان والشعارات', roles: ['all'] },
     { id: 'volunteers', label: 'طلبات التطوع', icon: UserPlus, color: 'text-orange-600', bg: 'bg-orange-50', desc: 'مراجعة المتقدمين الجدد للانضمام', roles: ['all'] },
+    { id: 'waman_system', label: 'نظام ومن أحياها', icon: Activity, color: 'text-red-600', bg: 'bg-red-50', desc: 'إدارة طلبات المتبرعين وحالات الاستغاثة', roles: ['full'] },
     { id: 'blood_bank', label: 'مستخدمو بنك الدم', icon: Droplet, color: 'text-red-600', bg: 'bg-red-50', desc: 'إدارة حسابات دخول نظام ومن أحياها', roles: ['full'] },
     { id: 'telegram', label: 'إعدادات البوت', icon: MessageCircle, color: 'text-sky-600', bg: 'bg-sky-50', desc: 'ضبط توكن البوت وقنوات التلجرام', roles: ['full'] },
+    { id: 'system_reset', label: 'إعادة ضبط النظام', icon: RefreshCw, color: 'text-red-600', bg: 'bg-red-50', desc: 'إعادة ضبط قاعدة البيانات وحذف المهام والسجلات', roles: ['super'] },
   ];
 
 
   const visibleTabs = tabs.filter(tab => {
+    if (tab.roles.includes('super')) {
+      return isSuperAdmin;
+    }
     if (isSuperAdmin) return true; // Super Admin sees everything
+
+    // Explicit permission mapping
+    if (tab.id === 'org' && userProfile?.canManageOrg) return true;
+    if (tab.id === 'telegram' && userProfile?.canManageTelegram) return true;
+    if (tab.id === 'volunteers' && userProfile?.canManageVolunteers) return true;
+    if (tab.id === 'blood_bank' && userProfile?.canAccessWamanAhyaaha) return true;
+    if (tab.id === 'waman_system' && userProfile?.canAccessWamanAhyaaha) return true;
+    if (tab.id === 'admin_table' && userProfile?.canViewAdminTable) return true;
+
     if (userProfile?.controlAccess === 'full') return true;
     if (tab.roles.includes('all')) return true;
     if (userProfile?.controlAccess === 'partial' && tab.roles.includes('partial')) return true;
     return false;
   });
+
+  useEffect(() => {
+    if (initialTab && tabs.find(t => t.id === initialTab)) {
+        setActiveTab(initialTab as AdminTab);
+    }
+  }, [initialTab]);
 
   useEffect(() => {
     if (visibleTabs.length > 0 && !visibleTabs.find(t => t.id === activeTab)) {
@@ -256,14 +277,15 @@ export default function ControlCenter({ user, userProfile, onClose, initialTab }
 
   const renderContent = () => {
     switch (activeTab) {
-      case 'users': return <UserManagement />;
       case 'admin_table': return <AdminTable user={user} mode="general" />;
       case 'org': return <OrgStructureSystem />;
-      case 'identity': return <IdentitySystem user={user} userProfile={userProfile} />;
       case 'volunteers': return <JoinRequests user={user} userProfile={userProfile} />;
+      case 'waman_system': return wamanProps ? <WamanAhyaahaSystem user={user} {...wamanProps} /> : null;
       case 'blood_bank': return <BloodBankUsersPanel />;
       case 'telegram': 
         return <TelegramMotherPanel />;
+      case 'system_reset':
+        return <SystemResetPanel />;
       default: return null;
     }
   };
@@ -272,8 +294,8 @@ export default function ControlCenter({ user, userProfile, onClose, initialTab }
     <div className="flex flex-col h-full bg-gray-50/50 dark:bg-gray-900/50 animate-fade-in pb-20">
       {/* Header Area */}
       <div className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-6">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 max-w-7xl mx-auto w-full">
-          <div>
+        <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 max-w-7xl mx-auto w-full min-w-0">
+          <div className="shrink-0">
             <h1 className="text-2xl font-black text-gray-800 dark:text-white flex items-center gap-3">
               <ShieldCheck className="text-indigo-600" size={32} />
               مركز التحكم والإدارة
@@ -281,12 +303,12 @@ export default function ControlCenter({ user, userProfile, onClose, initialTab }
             <p className="text-sm text-gray-500 mt-1">إدارة شاملة لكافة جوانب تطبيق معوان في مكان واحد</p>
           </div>
           
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 md:pb-0">
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-2 w-full min-w-0" style={{ WebkitOverflowScrolling: 'touch' }}>
             {visibleTabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as AdminTab)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap ${
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap shrink-0 ${
                   activeTab === tab.id 
                   ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 dark:shadow-none' 
                   : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-800'

@@ -1,0 +1,19 @@
+Created At: 2026-05-20T23:44:14Z
+Completed At: 2026-05-20T23:44:14Z
+File Path: `file:///E:/MyApps/Me3oan-v2/Me3oan-v2-main/components/WamanAhyaahaSystem.tsx`
+Total Lines: 905
+Total Bytes: 76018
+Showing lines 230 to 240
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+230:     standaloneAdminMode = false,
+231:     tasks = [], newTask, setNewTask, handleAddTask, toggleStatus, deleteTask, setSelectedTask, onOpenAddTask
+232: }: WamanAhyaahaSystemProps) {
+233:     const [viewMode, setViewMode] = useState<'landing' | 'guest' | 'login' | 'admin' | 'volunteers_portal'>('landing');
+234:     const [showSuccessModal, setShowSuccessModal] = useState(false);
+235:     const [adminName, setAdminName] = useState("");        // display name shown after login
+236:     const [adminUsername, setAdminUsername] = useState(""); // username field in form
+237:     const [adminPass, setAdminPass] = useState("");
+238:     const [loginError, setLoginError] = useState("");
+239:     const [loginLoading, setLoginLoading] = useState(false);
+240:     const [isAuthenticated, setIsAuthenticated] = useState(false);
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

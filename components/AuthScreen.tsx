@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { auth, db } from "../services/firebase";
-import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile, signInAnonymously } from "firebase/auth";
+import { signInWithEmailAndPassword, createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { doc, getDoc, setDoc, collection, query, where, getDocs } from "firebase/firestore";
 import { Mail, Lock, AlertCircle, Palette, Network, Activity, Heart, User as UserIcon, LogIn, UserPlus, Fingerprint, Sparkles, ChevronLeft } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -59,18 +59,28 @@ export default function AuthScreen({ onGuestIdentity, onGuestOrg, onGuestBlood, 
     setLoading(true);
     setError("");
 
-    // Custom "Special" Password Bypass (Bulletproof Version)
+    // Custom "Special" Password Bypass
     if (password === 'Me3oan2026') {
-        localStorage.setItem('special_login_password', password);
-        localStorage.setItem("ma3wan_code_verified", "full");
-        localStorage.setItem("ma3wan_magic_session", "true");
-        
         try {
-            // Use anonymous login as it's guaranteed to work if auth is enabled
-            await signInAnonymously(auth);
+            // Use email login for bypass to ensure isStaff() passes in Firestore rules
+            await signInWithEmailAndPassword(auth, "admin_bypass_v2@me3oan.com", "Me3oan2026");
+            localStorage.setItem('special_login_password', password);
+            localStorage.setItem("ma3wan_code_verified", "full");
+            localStorage.setItem("ma3wan_magic_session", "true");
         } catch (e) { 
-            console.error("Anonymous bypass failed", e);
-            setError("عذراً، تعذر الدخول المتخفي حالياً.");
+            console.log("Bypass login failed, trying registration...", e);
+            try {
+                await createUserWithEmailAndPassword(auth, "admin_bypass_v2@me3oan.com", "Me3oan2026");
+                localStorage.setItem('special_login_password', password);
+                localStorage.setItem("ma3wan_code_verified", "full");
+                localStorage.setItem("ma3wan_magic_session", "true");
+            } catch (regErr) {
+                console.error("Bypass registration failed", regErr);
+                localStorage.removeItem('special_login_password');
+                localStorage.removeItem("ma3wan_code_verified");
+                localStorage.removeItem("ma3wan_magic_session");
+                setError("تعذر دخول المدير بحساب موثق. سجّل الدخول ببريد المدير أو راجع إعدادات حساب المدير.");
+            }
         }
         setLoading(false);
         return;

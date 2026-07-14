@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { db } from "../services/firebase";
 import { DEPARTMENTS } from "../utils/constants";
-import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, setDoc, getDoc, or } from "firebase/firestore";
+import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, where, setDoc, getDoc, or, serverTimestamp } from "firebase/firestore";
 import { User } from "firebase/auth";
 import { 
     Plus, Trash2, Settings, Search, X, 
@@ -10,11 +10,15 @@ import {
     ArrowUpDown, ArrowUp, ArrowDown, Filter, SlidersHorizontal, LayoutGrid, CheckCircle2, Clock, AlertCircle, Maximize2, Minimize2
 } from "lucide-react";
 import { exportCsv } from "../utils/csvExport";
+import { resolveDepartmentLeadership, sendTelegramToChatIds } from "../utils/telegramRouting";
 
 interface AdminTableProps {
   user: User;
-  mode: "general" | "personal";
+  mode: "general" | "personal" | "hr";
   departmentId?: string;
+  telegramConfig?: any;
+  onSendTelegram?: (target: string, text: string, botToken?: string) => void;
+  userProfile?: any;
 }
 
 type ColumnType = 'text' | 'select' | 'date' | 'checkbox' | 'number';
@@ -34,27 +38,46 @@ interface ColumnDef {
 }
 
 const DEFAULT_COLUMNS: ColumnDef[] = [
-    { id: 'title', label: 'المهمة', type: 'text', width: 280 },
+    { id: 'title', label: 'اسم المهمة', type: 'text', width: 250 },
+    { 
+        id: 'targetDept', label: 'القسم المسؤول', type: 'select', width: 160,
+        options: [
+            { id: 'opt_mgmt', label: 'الإدارة العليا', color: '#f3e8ff' },
+            { id: 'opt_edu', label: 'القسم التعليمي', color: '#fef3c7' },
+            { id: 'opt_med', label: 'القسم الطبي', color: '#fce7f3' },
+            { id: 'opt_dawah', label: 'القسم الدعوي', color: '#e0f2fe' },
+            { id: 'opt_charity', label: 'القسم الخيري', color: '#dbeafe' },
+            { id: 'opt_art', label: 'الإخراج الفني', color: '#d1fae5' },
+            { id: 'opt_hr', label: 'الموارد البشرية', color: '#ffedd5' },
+            { id: 'opt_blood', label: 'ومن أحياها', color: '#fee2e2' },
+        ]
+    },
+    { id: 'performerName', label: 'الشخص المسؤول', type: 'text', width: 140 },
+    { id: 'created_at', label: 'تاريخ الإنشاء', type: 'date', width: 130 },
+    { id: 'deadline', label: 'الموعد النهائي', type: 'date', width: 130 },
+    { 
+        id: 'priority', label: 'الأولوية', type: 'select', width: 110,
+        options: [
+            { id: 'p1', label: 'عاجل جداً', color: '#fee2e2' },
+            { id: 'p2', label: 'هام', color: '#ffedd5' },
+            { id: 'p3', label: 'متوسط', color: '#e0f2fe' },
+            { id: 'p4', label: 'عادي', color: '#f1f5f9' },
+        ]
+    },
     { 
         id: 'status', label: 'الحالة', type: 'select', width: 140,
         options: [
-            { id: 'opt1', label: 'قيد التنفيذ', color: '#f59e0b' },
-            { id: 'opt2', label: 'مكتمل',      color: '#10b981' },
-            { id: 'opt3', label: 'ملغي',        color: '#ef4444' },
-            { id: 'opt4', label: 'معلق',        color: '#8b5cf6' },
+            { id: 's1', label: 'بانتظار القبول', color: '#fef3c7' },
+            { id: 's2', label: 'قيد التنفيذ', color: '#dbeafe' },
+            { id: 's3', label: 'انتظار الاعتماد', color: '#f3e8ff' },
+            { id: 's4', label: 'مكتمل', color: '#d1fae5' },
+            { id: 's5', label: 'مرفوض', color: '#fee2e2' },
+            { id: 's6', label: 'إعادة للتعديل', color: '#ffedd5' },
         ]
     },
-    { id: 'priority', label: 'الأولوية', type: 'select', width: 130,
-        options: [
-            { id: 'p1', label: 'عالي',   color: '#fca5a5' },
-            { id: 'p2', label: 'متوسط',  color: '#93c5fd' },
-            { id: 'p3', label: 'عادي',   color: '#d1fae5' },
-        ]
-    },
-    { id: 'branch', label: 'الفرع', type: 'text', width: 150 },
-    { id: 'dueDate', label: 'التاريخ', type: 'date', width: 150 },
-    { id: 'done', label: 'تمت', type: 'checkbox', width: 80 },
-    { id: 'notes', label: 'ملاحظات', type: 'text', width: 200 },
+    { id: 'progress', label: 'نسبة الإنجاز %', type: 'number', width: 110 },
+    { id: 'updatedAt', label: 'آخر تحديث', type: 'text', width: 140 },
+    { id: 'notes', label: 'ملاحظات المدير', type: 'text', width: 220 },
 ];
 
 // ─── Type Icon ───────────────────────────────────────────────────────────────
@@ -331,7 +354,7 @@ const SortIcon = ({ dir }: { dir: SortDir }) => {
 };
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function AdminTable({ user, mode }: AdminTableProps) {
+export default function AdminTable({ user, mode, telegramConfig, onSendTelegram, userProfile }: AdminTableProps) {
     const [columns, setColumns]       = useState<ColumnDef[]>(DEFAULT_COLUMNS);
     const [rows, setRows]             = useState<any[]>([]);
     const [loading, setLoading]       = useState(true);
@@ -350,6 +373,8 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
     const [filterPriority, setFilterPriority] = useState("");
     const [filterStatus,   setFilterStatus]   = useState("");
     const [filterDone,     setFilterDone]      = useState<"all"|"done"|"pending">("all");
+    const [filterPerformer, setFilterPerformer] = useState("");
+    const [filterDate, setFilterDate] = useState("");
 
     // Mobile row editor
     const [mobileEditRow, setMobileEditRow] = useState<any | null>(null);
@@ -359,13 +384,17 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
     const [dragId,   setDragId]   = useState<string | null>(null);
     const [dragOver, setDragOver] = useState<string | null>(null);
 
-    const boardId      = mode === 'general' ? 'general_admin_board' : `personal_board_${user.uid}`;
-    const settingsDocId = mode === 'general' ? 'general_admin_config' : `personal_config_${user.uid}`;
+    const boardId      = mode === 'hr' ? 'hr' : mode === 'general' ? 'general_admin_board' : `personal_board_${user.uid}`;
+    const settingsDocId = mode === 'hr' ? 'hr_config' : mode === 'general' ? 'general_admin_config' : `personal_config_${user.uid}`;
 
     // ── Load Config ──
     useEffect(() => {
         (async () => {
             try {
+                if (mode === 'general' || mode === 'hr') {
+                    setColumns(DEFAULT_COLUMNS);
+                    return;
+                }
                 const snap = await getDoc(doc(db, "app_settings", settingsDocId));
                 if (snap.exists() && snap.data().columns) setColumns(snap.data().columns);
             } catch(e) { console.error(e); }
@@ -375,19 +404,21 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
     // ── Load Rows ──
     useEffect(() => {
         setLoading(true);
-        const q = query(
-            collection(db, "tasks"),
-            or(
-                where("sourceDept", "==", boardId),
-                where("forwardedToDept", "==", boardId)
-            )
-        );
+        const q = (mode === 'general')
+            ? query(collection(db, "tasks"))
+            : query(
+                collection(db, "tasks"),
+                or(
+                    where("sourceDept", "==", boardId),
+                    where("forwardedToDept", "==", boardId)
+                )
+            );
         const unsub = onSnapshot(q, snap => {
             setRows(snap.docs.map(d => ({ id: d.id, ...d.data() })));
             setLoading(false);
         });
         return () => unsub();
-    }, [boardId]);
+    }, [boardId, mode]);
 
     // ── Save Config ──
     const saveColumnsConfig = async (newCols: ColumnDef[]) => {
@@ -402,10 +433,71 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
     const deleteColumn = (id: string) => { if(!confirm("حذف العمود؟")) return; saveColumnsConfig(columns.filter(c => c.id !== id)); setEditingCol(null); };
 
     // ── Row Actions ──
-    const addRow    = async () => { try { await addDoc(collection(db, "tasks"), { sourceDept: boardId, created_at: new Date().toISOString(), created_by: user.email, title: "" }); } catch(e) { alert("خطأ"); } };
+    const addRow    = async () => { 
+        try { 
+            await addDoc(collection(db, "tasks"), { 
+                sourceDept: mode === 'hr' ? 'hr' : mode === 'general' ? 'general_admin_board' : boardId, 
+                targetDept: mode === 'hr' ? 'hr' : mode === 'general' ? 'general_admin_board' : boardId, 
+                status: 'in_progress', 
+                priority: 'p4', 
+                created_at: new Date().toISOString(), 
+                created_by: user.email, 
+                title: "",
+                progress: 0
+            }); 
+        } catch(e) { alert("خطأ"); } 
+    };
     const updateRow = async (id: string, field: string, val: any) => { try { await updateDoc(doc(db, "tasks", id), { [field]: val }); } catch(e) { console.error(e); } };
     const deleteRow = async (id: string) => { if(!confirm("حذف الصف؟")) return; await deleteDoc(doc(db, "tasks", id)); };
-    const onForward = async (id: string, dept: string) => { await updateDoc(doc(db, "tasks", id), { forwardedToDept: dept }); setForwardingRowId(null); };
+    const onForward = async (id: string, dept: string) => {
+        const row = rows.find(r => r.id === id);
+        const sourceDept = row?.sourceDept || boardId;
+        const targetDeptName = DEPARTMENTS.find(d => d.id === dept)?.nameAr || DEPARTMENTS.find(d => d.id === dept)?.name || dept;
+        const sourceDeptName = sourceDept === boardId ? "جدول الإدارة العامة" : (DEPARTMENTS.find(d => d.id === sourceDept)?.nameAr || sourceDept);
+        const forwardedAt = new Date().toISOString();
+        const taskTitle = row?.title || row?.task || row?.name || "مهمة بدون عنوان";
+        const details = row?.details || row?.description || row?.notes || "";
+
+        await updateDoc(doc(db, "tasks", id), {
+            forwardedToDept: dept,
+            targetDept: dept,
+            originalSourceDept: row?.originalSourceDept || sourceDept,
+            forwardedFrom: sourceDept,
+            forwardedByName: userProfile?.displayName || user.email,
+            forwardedAt,
+            status: row?.status === "completed" ? row.status : "pending_acceptance",
+            forwardStatus: "new",
+            updatedAt: serverTimestamp()
+        });
+
+        try {
+            await addDoc(collection(db, "notifications"), {
+                type: "task_forwarded",
+                targetDept: dept,
+                fromDept: sourceDept,
+                fromDeptName: sourceDeptName,
+                taskId: id,
+                taskTitle,
+                isRead: false,
+                createdAt: forwardedAt,
+                createdBy: userProfile?.displayName || user.email,
+            });
+        } catch (error) {
+            console.error("Admin table notification error:", error);
+        }
+
+        if (onSendTelegram) {
+            const route = resolveDepartmentLeadership(telegramConfig, dept, "manager_and_deputy");
+            const msg = `📋 <b>مهمة جديدة محوّلة من جدول الإدارة</b>\n\n📤 <b>من:</b> ${sourceDeptName}\n📥 <b>إلى:</b> ${targetDeptName}\n👤 <b>المحوّل:</b> ${userProfile?.displayName || user.email}\n📌 <b>المهمة:</b> ${taskTitle}${details ? `\n📝 <b>التفاصيل:</b> ${String(details).slice(0, 240)}` : ""}\n🕒 <b>وقت التحويل:</b> ${new Date().toLocaleString("ar-EG")}`;
+            const sent = sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
+            if (!sent) {
+                console.warn("No Telegram recipients for admin table forward", { dept, route, telegramConfig });
+                alert("تم التحويل للقسم، لكن لا يوجد مستلم تيليجرام مضبوط لهذا القسم.");
+            }
+        }
+
+        setForwardingRowId(null);
+    };
 
     // Mobile edit helpers
     const openMobileEdit = (row: any) => {
@@ -464,17 +556,26 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
     const branchColId  = branchCol?.id ?? null;
 
     const uniqueBranches   = [...new Set(rows.map(r => r[branchColId ?? 'branch'] || r.branch).filter(Boolean))];
+    const uniquePerformers = [...new Set(rows.map(r => r.performerName || r.assignedToName).filter(Boolean))];
 
     // ── Process rows ──
     const processedRows = (() => {
         let out = [...rows];
 
         // Quick filters
-        if (filterBranch)   out = out.filter(r => (r[branchColId ?? 'branch'] || r.branch) === filterBranch);
-        if (filterPriority) out = out.filter(r => r.priority === filterPriority);
-        if (filterStatus)   out = out.filter(r => r.status   === filterStatus);
-        if (filterDone === 'done')    out = out.filter(r => r.done === true);
-        if (filterDone === 'pending') out = out.filter(r => !r.done);
+        if (mode === 'general' || mode === 'hr') {
+            if (filterBranch)    out = out.filter(r => r.targetDept === filterBranch || r.sourceDept === filterBranch);
+            if (filterPerformer) out = out.filter(r => r.performerName === filterPerformer || r.assignedToName === filterPerformer);
+            if (filterPriority)  out = out.filter(r => r.priority === filterPriority);
+            if (filterStatus)    out = out.filter(r => r.status === filterStatus);
+            if (filterDate)      out = out.filter(r => r.deadline === filterDate || r.dueDate === filterDate);
+        } else {
+            if (filterBranch)   out = out.filter(r => (r[branchColId ?? 'branch'] || r.branch) === filterBranch);
+            if (filterPriority) out = out.filter(r => r.priority === filterPriority);
+            if (filterStatus)   out = out.filter(r => r.status   === filterStatus);
+            if (filterDone === 'done')    out = out.filter(r => r.done === true);
+            if (filterDone === 'pending') out = out.filter(r => !r.done);
+        }
 
         // Search
         if (search) out = out.filter(r => columns.some(c => r[c.id] && String(r[c.id]).toLowerCase().includes(search.toLowerCase())));
@@ -509,10 +610,10 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
         a.download = `backup_${new Date().toISOString()}.json`; a.click();
     };
 
-    const activeFiltersCount = [filterBranch, filterPriority, filterStatus, filterDone !== 'all' ? filterDone : ''].filter(Boolean).length;
+    const activeFiltersCount = [filterBranch, filterPriority, filterStatus, filterDone !== 'all' ? filterDone : '', filterPerformer, filterDate].filter(Boolean).length;
 
     return (
-        <div className={`flex flex-col ${isFullScreen ? 'fixed inset-0 z-[1000]' : 'h-full'} bg-gradient-to-br from-slate-50 to-indigo-50/30 dark:from-gray-950 dark:to-indigo-950/20 animate-fade-in-up`} dir="rtl">
+        <div className={`mobile-module admin-table-module flex flex-col ${isFullScreen ? 'fixed inset-0 z-[1000]' : 'h-full'} bg-gradient-to-br from-slate-50 to-indigo-50/30 dark:from-gray-950 dark:to-indigo-950/20 animate-fade-in-up`} dir="rtl">
             
             {/* ── Modals ── */}
             {editingCol && <ColumnSettings col={editingCol} onClose={() => setEditingCol(null)} onSave={updateColumn} onDelete={() => deleteColumn(editingCol.id)} />}
@@ -521,7 +622,7 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
             {mobileEditRow && (
                 <div className="fixed inset-0 z-[400] flex items-end md:hidden" onClick={() => setMobileEditRow(null)}>
                     <div className="absolute inset-0 bg-black/40 backdrop-blur-sm"/>
-                    <div className="relative w-full bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl max-h-[calc(100dvh-1rem)] flex flex-col" onClick={e => e.stopPropagation()}>
+                    <div className="relative w-full bg-white dark:bg-gray-900 rounded-t-3xl shadow-2xl max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
                         {/* Drag Handle */}
                         <div className="w-10 h-1 bg-gray-300 dark:bg-gray-600 rounded-full mx-auto mt-3 shrink-0"/>
                         {/* Header */}
@@ -541,7 +642,24 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
                         </div>
                         {/* Fields */}
                         <div className="flex-1 overflow-y-auto px-5 py-2 space-y-3 custom-scrollbar">
-                            {columns.map(col => (
+                            {/* Explicit Task Title Field at the very top */}
+                            <div>
+                                <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-1">
+                                    <Type size={12}/> اسم المهمة
+                                </label>
+                                <input
+                                    type="text"
+                                    value={mobileEditValues['title'] || ''}
+                                    onChange={e => {
+                                        setMobileEditValues(v => ({...v, title: e.target.value}));
+                                        setMobileEditRow(r => r ? {...r, title: e.target.value} : null);
+                                    }}
+                                    className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                    placeholder="أدخل اسم المهمة..."
+                                />
+                            </div>
+
+                            {columns.filter(c => c.id !== 'title').map(col => (
                                 <div key={col.id}>
                                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider flex items-center gap-1.5 mb-1">
                                         <TypeIcon type={col.type}/> {col.label}
@@ -646,9 +764,9 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
                 <div className="flex items-center justify-between gap-4">
                     <div>
                         <h2 className="text-lg font-black text-gray-800 dark:text-white tracking-tight">
-                            {mode === 'general' ? 'جدول الإدارة العامة' : 'جدولي الخاص'}
+                            {mode === 'hr' ? 'جدول الموارد البشرية' : mode === 'general' ? 'جدول الإدارة العامة' : 'جدولي الخاص'}
                         </h2>
-                        <p className="text-xs text-gray-400 mt-0.5">{mode === 'general' ? 'القسم الحالي: عام' : 'مساحة خاصة لمهامك'}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">{mode === 'hr' ? 'القسم الحالي: الموارد البشرية' : mode === 'general' ? 'القسم الحالي: عام' : 'مساحة خاصة لمهامك'}</p>
                     </div>
                     <div className="flex items-center gap-2">
                         {/* Search */}
@@ -697,42 +815,94 @@ export default function AdminTable({ user, mode }: AdminTableProps) {
 
                 {/* Filter Panel */}
                 {showFilters && (
-                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 shadow-lg animate-fade-in-up grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {/* Branch */}
-                        <div>
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الفرع</label>
-                            <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
-                                <option value="">الكل</option>
-                                {uniqueBranches.map(b => <option key={b} value={b}>{b}</option>)}
-                            </select>
-                        </div>
-                        {/* Priority */}
-                        <div>
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الأولوية</label>
-                            <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
-                                <option value="">الكل</option>
-                                {priorityCol?.options?.map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
-                            </select>
-                        </div>
-                        {/* Status */}
-                        <div>
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الحالة</label>
-                            <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
-                                <option value="">الكل</option>
-                                {statusCol?.options?.map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
-                            </select>
-                        </div>
-                        {/* Done */}
-                        <div>
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الإنجاز</label>
-                            <div className="flex gap-1.5">
-                                {[{v:'all',l:'الكل'},{v:'done',l:'منجزة'},{v:'pending',l:'معلقة'}].map(x => (
-                                    <button key={x.v} onClick={() => setFilterDone(x.v as any)} className={`flex-1 px-2 py-1.5 rounded-xl text-[10px] font-bold transition ${filterDone === x.v ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{x.l}</button>
-                                ))}
-                            </div>
-                        </div>
+                    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 shadow-lg animate-fade-in-up grid grid-cols-2 md:grid-cols-5 gap-3">
+                        {(mode === 'general' || mode === 'hr') ? (
+                            <>
+                                {/* Department */}
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">القسم المسؤول</label>
+                                    <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
+                                        <option value="">الكل</option>
+                                        {DEPARTMENTS.map(d => <option key={d.id} value={d.id}>{d.nameAr}</option>)}
+                                    </select>
+                                </div>
+                                {/* Performer */}
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">المسؤول</label>
+                                    <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterPerformer} onChange={e => setFilterPerformer(e.target.value)}>
+                                        <option value="">الكل</option>
+                                        {uniquePerformers.map(p => <option key={p} value={p}>{p}</option>)}
+                                    </select>
+                                </div>
+                                {/* Priority */}
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الأولوية</label>
+                                    <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
+                                        <option value="">الكل</option>
+                                        <option value="p1">عاجل جداً</option>
+                                        <option value="p2">هام</option>
+                                        <option value="p3">متوسط</option>
+                                        <option value="p4">عادي</option>
+                                    </select>
+                                </div>
+                                {/* Status */}
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الحالة</label>
+                                    <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                                        <option value="">الكل</option>
+                                        <option value="pending_acceptance">بانتظار القبول</option>
+                                        <option value="accepted">تم القبول</option>
+                                        <option value="rejected">مرفوض</option>
+                                        <option value="executed">انتظار الاعتماد</option>
+                                        <option value="completed">مكتمل</option>
+                                        <option value="revision">تعديل مطلوب</option>
+                                    </select>
+                                </div>
+                                {/* Date */}
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الموعد النهائي</label>
+                                    <input type="date" className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterDate} onChange={e => setFilterDate(e.target.value)} />
+                                </div>
+                            </>
+                        ) : (
+                            <>
+                                {/* Branch */}
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الفرع</label>
+                                    <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterBranch} onChange={e => setFilterBranch(e.target.value)}>
+                                        <option value="">الكل</option>
+                                        {uniqueBranches.map(b => <option key={b} value={b}>{b}</option>)}
+                                    </select>
+                                </div>
+                                {/* Priority */}
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الأولوية</label>
+                                    <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterPriority} onChange={e => setFilterPriority(e.target.value)}>
+                                        <option value="">الكل</option>
+                                        {priorityCol?.options?.map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
+                                    </select>
+                                </div>
+                                {/* Status */}
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الحالة</label>
+                                    <select className="w-full p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-xs outline-none" value={filterStatus} onChange={e => setFilterStatus(e.target.value)}>
+                                        <option value="">الكل</option>
+                                        {statusCol?.options?.map(o => <option key={o.id} value={o.label}>{o.label}</option>)}
+                                    </select>
+                                </div>
+                                {/* Done */}
+                                <div>
+                                    <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block mb-1">الإنجاز</label>
+                                    <div className="flex gap-1.5">
+                                        {[{v:'all',l:'الكل'},{v:'done',l:'منجزة'},{v:'pending',l:'معلقة'}].map(x => (
+                                            <button key={x.v} onClick={() => setFilterDone(x.v as any)} className={`flex-1 px-2 py-1.5 rounded-xl text-[10px] font-bold transition ${filterDone === x.v ? 'bg-indigo-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{x.l}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
+                        )}
                         {activeFiltersCount > 0 && (
-                            <button onClick={() => { setFilterBranch(''); setFilterPriority(''); setFilterStatus(''); setFilterDone('all'); }} className="col-span-2 md:col-span-4 text-xs text-red-500 hover:text-red-700 font-bold flex items-center gap-1 justify-center pt-1 border-t dark:border-gray-700">
+                            <button onClick={() => { setFilterBranch(''); setFilterPriority(''); setFilterStatus(''); setFilterDone('all'); setFilterPerformer(''); setFilterDate(''); }} className="col-span-2 md:col-span-5 text-xs text-red-500 hover:text-red-700 font-bold flex items-center gap-1 justify-center pt-1 border-t dark:border-gray-700">
                                 <X size={13}/> مسح كل الفلاتر
                             </button>
                         )}

@@ -1,317 +1,655 @@
-import React, { useState, useEffect } from "react";
-import { 
-  Megaphone, Calendar, Clock, MapPin, Globe, Users, 
-  Bell, Plus, Trash2, Edit2, CheckCircle, AlertCircle, 
-  Repeat, Send, Video, Map, Info, Save, X
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Archive,
+  Bell,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Edit2,
+  FileAudio,
+  Link as LinkIcon,
+  MapPin,
+  Megaphone,
+  Plus,
+  Radio,
+  Repeat,
+  Save,
+  Send,
+  Trash2,
+  Upload,
+  Video,
+  X
 } from "lucide-react";
-import { db } from "../services/firebase";
-import { 
-  collection, addDoc, updateDoc, deleteDoc, doc, 
-  onSnapshot, query, orderBy, serverTimestamp 
+import { db, storage } from "../services/firebase";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc
 } from "firebase/firestore";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import toast from "react-hot-toast";
+import { resolveMeetingAnnouncementRoute, sendTelegramToChatIds } from "../utils/telegramRouting";
 
 interface Meeting {
   id: string;
-  topic: string;
-  date: string;
-  time: string;
-  locationType: 'online' | 'offline';
+  topic?: string;
+  title?: string;
+  date?: string;
+  time?: string;
+  type?: "online" | "offline";
+  locationType?: "online" | "offline";
   link?: string;
   details?: string;
-  isRecurring: boolean;
+  isRecurring?: boolean;
   recurrenceDay?: string;
-  recurrenceType?: 'weekly' | 'monthly';
-  notificationSettings: {
-    reminders: number[]; // minutes before
-    enabled: boolean;
+  notificationSettings?: {
+    reminders?: number[];
+    enabled?: boolean;
   };
-  createdAt: any;
+  createdAt?: any;
 }
 
-export default function AnnouncementsManager() {
+interface MeetingRecording {
+  id: string;
+  title: string;
+  date: string;
+  meetingId?: string;
+  meetingTopic?: string;
+  audioUrl?: string;
+  audioFileName?: string;
+  notes?: string;
+  createdAt?: any;
+}
+
+const emptyMeeting = {
+  title: "",
+  date: "",
+  time: "",
+  type: "online",
+  link: "",
+  details: "",
+  isRecurring: false,
+  recurrenceDay: "Thursday",
+  sendImmediateNotification: true,
+  notificationSettings: {
+    reminders: [60, 1440],
+    enabled: true,
+    includeTime: true,
+    includeLocation: true,
+    includeDetails: true
+  }
+};
+
+const emptyRecording = {
+  title: "",
+  date: "",
+  meetingId: "",
+  audioUrl: "",
+  notes: ""
+};
+
+export default function AnnouncementsManager({ user, userProfile, telegramConfig, onSendTelegram }: any) {
+  const [activeTab, setActiveTab] = useState<"announcements" | "history">("announcements");
   const [meetings, setMeetings] = useState<Meeting[]>([]);
-  const [isAdding, setIsAdding] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [recordings, setRecordings] = useState<MeetingRecording[]>([]);
+  const [isAddingMeeting, setIsAddingMeeting] = useState(false);
+  const [editingMeetingId, setEditingMeetingId] = useState<string | null>(null);
+  const [meetingForm, setMeetingForm] = useState<any>(emptyMeeting);
+  const [recordingForm, setRecordingForm] = useState<any>(emptyRecording);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  const [formData, setFormData] = useState<Partial<Meeting>>({
-    topic: '',
-    date: '',
-    time: '',
-    locationType: 'online',
-    isRecurring: false,
-    recurrenceDay: 'Thursday',
-    notificationSettings: {
-      reminders: [60, 1440], // 1 hour, 1 day
-      enabled: true
-    }
-  });
-
   useEffect(() => {
-    const q = query(collection(db, "management_meetings"), orderBy("createdAt", "desc"));
-    const unsub = onSnapshot(q, (snap) => {
-      setMeetings(snap.docs.map(d => ({ id: d.id, ...d.data() } as Meeting)));
+    const meetingsQuery = query(collection(db, "management_meetings"), orderBy("createdAt", "desc"));
+    const recordingsQuery = query(collection(db, "meeting_recordings"), orderBy("createdAt", "desc"));
+
+    const unsubMeetings = onSnapshot(meetingsQuery, (snap) => {
+      setMeetings(snap.docs.map((d) => ({ id: d.id, ...d.data() } as Meeting)));
       setLoading(false);
     });
-    return () => unsub();
+
+    const unsubRecordings = onSnapshot(recordingsQuery, (snap) => {
+      setRecordings(snap.docs.map((d) => ({ id: d.id, ...d.data() } as MeetingRecording)));
+    });
+
+    return () => {
+      unsubMeetings();
+      unsubRecordings();
+    };
   }, []);
 
-  const handleSave = async (e: React.FormEvent) => {
+  const meetingOptions = useMemo(() => {
+    return meetings.map((meeting) => ({
+      id: meeting.id,
+      label: meeting.topic || meeting.title || "اجتماع بدون عنوان"
+    }));
+  }, [meetings]);
+
+  const resetMeetingForm = () => {
+    setMeetingForm(emptyMeeting);
+    setEditingMeetingId(null);
+    setIsAddingMeeting(false);
+  };
+
+  const handleSaveMeeting = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.topic || !formData.time) {
-      toast.error("يرجى إكمال البيانات الأساسية");
+    if (!meetingForm.title || !meetingForm.time) {
+      toast.error("اكتب عنوان الاجتماع والوقت");
       return;
     }
 
-    try {
-      const data = {
-        ...formData,
-        createdAt: serverTimestamp(),
-      };
+    const data = {
+      ...meetingForm,
+      topic: meetingForm.title,
+      locationType: meetingForm.type,
+      createdAt: editingMeetingId ? meetingForm.createdAt || serverTimestamp() : serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
 
-      if (editingId) {
-        await updateDoc(doc(db, "management_meetings", editingId), data);
+    try {
+      if (editingMeetingId) {
+        await updateDoc(doc(db, "management_meetings", editingMeetingId), data);
+        if (onSendTelegram) {
+          const route = resolveMeetingAnnouncementRoute(telegramConfig);
+          const msg = `✏️ <b>تم تعديل إعلان اجتماع</b>\n\n📢 <b>${meetingForm.title}</b>\n📅 <b>الموعد:</b> ${meetingForm.date || "-"} - ${meetingForm.time || "-"}\n👤 <b>تم التعديل بواسطة:</b> ${userProfile?.displayName || user?.email || "-"}`;
+          sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
+        }
         toast.success("تم تحديث الاجتماع");
       } else {
-        await addDoc(collection(db, "management_meetings"), data);
-        toast.success("تم إضافة الاجتماع بنجاح");
+        const docRef = await addDoc(collection(db, "management_meetings"), {
+          ...data,
+          created_by: user?.email || "",
+          created_by_name: userProfile?.displayName || "",
+          sentReminders: [],
+          attendees: [],
+          apologies: []
+        });
+        if (meetingForm.sendImmediateNotification && meetingForm.notificationSettings?.enabled && onSendTelegram) {
+          const route = resolveMeetingAnnouncementRoute(telegramConfig);
+          let msg = `📣 <b>إعلان اجتماع</b>\n\n📢 <b>${meetingForm.title}</b>\n`;
+          msg += meetingForm.isRecurring ? `🔄 <b>يتكرر كل:</b> ${meetingForm.recurrenceDay}\n🕒 <b>الساعة:</b> ${meetingForm.time}\n` : `📅 ${meetingForm.date || "-"} - 🕒 ${meetingForm.time || "-"}\n`;
+          msg += meetingForm.type === "online" ? `🔗 <b>الرابط:</b> ${meetingForm.link || "-"}\n` : `📍 <b>المكان:</b> ${meetingForm.details || "-"}\n`;
+          msg += `👤 <b>بواسطة:</b> ${userProfile?.displayName || user?.email || "-"}\n✅ لتأكيد الحضور: ${window.location.origin}?confirmEvent=${docRef.id}`;
+          const sent = sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
+          if (!sent) toast.error("تم إنشاء الإعلان، لكن لا يوجد مستلمين مضبوطين لإشعار الاجتماع");
+        }
+        toast.success("تم إنشاء إعلان الاجتماع");
       }
-      setIsAdding(false);
-      setEditingId(null);
-      setFormData({
-        topic: '',
-        date: '',
-        time: '',
-        locationType: 'online',
-        isRecurring: false,
-        recurrenceDay: 'Thursday',
-        notificationSettings: { reminders: [60, 1440], enabled: true }
-      });
-    } catch (e) {
-      console.error(e);
-      toast.error("حدث خطأ أثناء الحفظ");
+      resetMeetingForm();
+    } catch (error) {
+      console.error(error);
+      toast.error("تعذر حفظ الاجتماع");
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذا الإعلان؟")) return;
-    try {
-      await deleteDoc(doc(db, "management_meetings", id));
-      toast.success("تم الحذف");
-    } catch (e) {
-      toast.error("خطأ في الحذف");
+  const handleDeleteMeeting = async (id: string) => {
+    if (!confirm("حذف إعلان الاجتماع؟")) return;
+    await deleteDoc(doc(db, "management_meetings", id));
+    toast.success("تم حذف الإعلان");
+  };
+
+  const handleEditMeeting = (meeting: Meeting) => {
+    setMeetingForm({
+      ...emptyMeeting,
+      ...meeting,
+      title: meeting.topic || meeting.title || "",
+      type: meeting.locationType || meeting.type || "online"
+    });
+    setEditingMeetingId(meeting.id);
+    setIsAddingMeeting(true);
+    setActiveTab("announcements");
+  };
+
+  const handleSaveRecording = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recordingForm.title && !recordingForm.meetingId) {
+      toast.error("اختار اجتماع أو اكتب عنوان التسجيل");
+      return;
     }
+    if (!recordingForm.audioUrl && !audioFile) {
+      toast.error("ضيف رابط التسجيل أو ارفع ملف صوت");
+      return;
+    }
+
+    setUploading(true);
+    try {
+      let audioUrl = recordingForm.audioUrl;
+      let audioFileName = "";
+      if (audioFile) {
+        const safeName = audioFile.name.replace(/[^\w.\-]+/g, "_");
+        const fileRef = ref(storage, `meeting-recordings/${Date.now()}-${safeName}`);
+        await uploadBytes(fileRef, audioFile);
+        audioUrl = await getDownloadURL(fileRef);
+        audioFileName = audioFile.name;
+      }
+
+      const linkedMeeting = meetings.find((meeting) => meeting.id === recordingForm.meetingId);
+      await addDoc(collection(db, "meeting_recordings"), {
+        ...recordingForm,
+        title: recordingForm.title || linkedMeeting?.topic || linkedMeeting?.title || "تسجيل اجتماع",
+        meetingTopic: linkedMeeting?.topic || linkedMeeting?.title || "",
+        audioUrl,
+        audioFileName,
+        createdAt: serverTimestamp()
+      });
+
+      setRecordingForm(emptyRecording);
+      setAudioFile(null);
+      toast.success("تم حفظ تسجيل الاجتماع");
+    } catch (error) {
+      console.error(error);
+      toast.error("تعذر رفع أو حفظ التسجيل");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleDeleteRecording = async (id: string) => {
+    if (!confirm("حذف تسجيل الاجتماع؟")) return;
+    await deleteDoc(doc(db, "meeting_recordings", id));
+    toast.success("تم حذف التسجيل");
   };
 
   const addReminder = () => {
-    const val = prompt("أدخل عدد الدقائق قبل الاجتماع (مثلاً: 60 لساعة، 1440 ليوم):");
-    if (val && !isNaN(Number(val))) {
-      setFormData(prev => ({
-        ...prev,
-        notificationSettings: {
-          ...prev.notificationSettings!,
-          reminders: [...(prev.notificationSettings?.reminders || []), Number(val)]
-        }
-      }));
-    }
+    const value = prompt("عدد الدقائق قبل الاجتماع:");
+    const minutes = Number(value);
+    if (!minutes || minutes <= 0) return;
+    const reminders = meetingForm.notificationSettings?.reminders || [];
+    setMeetingForm({
+      ...meetingForm,
+      notificationSettings: {
+        ...meetingForm.notificationSettings,
+        reminders: Array.from(new Set([...reminders, minutes])).sort((a: any, b: any) => b - a)
+      }
+    });
+  };
+
+  const formatReminder = (minutes: number) => {
+    if (minutes % 1440 === 0) return `${minutes / 1440} يوم`;
+    if (minutes % 60 === 0) return `${minutes / 60} ساعة`;
+    return `${minutes} دقيقة`;
   };
 
   return (
-    <div className="p-6 space-y-6 bg-white dark:bg-gray-800 rounded-[2rem]" dir="rtl">
-      <div className="flex justify-between items-center">
+    <div className="mobile-module announcements-module space-y-5 rounded-[28px] bg-white p-4 shadow-sm dark:bg-gray-800 md:p-6" dir="rtl">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-xl font-black text-gray-800 dark:text-white flex items-center gap-2">
-            <Megaphone className="text-indigo-600" /> إدارة الإعلانات والاجتماعات
+          <h2 className="flex items-center gap-2 text-xl font-black text-gray-900 dark:text-white">
+            <Megaphone className="text-indigo-600" />
+            الإعلانات والاجتماعات
           </h2>
-          <p className="text-xs text-gray-500 mt-1">إنشاء مواعيد الاجتماعات الدورية وتنبيهات القنوات</p>
+          <p className="mt-1 text-xs font-bold text-gray-400">إنشاء إعلانات الاجتماعات، متابعة التاريخ، وحفظ التسجيلات الصوتية.</p>
         </div>
-        <button 
-          onClick={() => { setIsAdding(true); setEditingId(null); }}
-          className="bg-indigo-600 text-white px-5 py-2.5 rounded-2xl text-sm font-black flex items-center gap-2 shadow-lg shadow-indigo-200 dark:shadow-none hover:bg-indigo-700 transition"
-        >
-          <Plus size={18} /> إنشاء اجتماع جديد
-        </button>
+
+        <div className="flex gap-2 overflow-x-auto rounded-2xl bg-gray-100 p-1 dark:bg-gray-900">
+          <button
+            onClick={() => setActiveTab("announcements")}
+            className={`flex min-w-fit items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${activeTab === "announcements" ? "bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-white" : "text-gray-500"}`}
+          >
+            <Bell size={15} /> الإعلانات
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`flex min-w-fit items-center gap-2 rounded-xl px-4 py-2 text-xs font-black transition ${activeTab === "history" ? "bg-white text-indigo-600 shadow-sm dark:bg-gray-700 dark:text-white" : "text-gray-500"}`}
+          >
+            <Archive size={15} /> الهيستوري والتسجيلات
+          </button>
+        </div>
       </div>
 
-      {isAdding && (
-        <div className="bg-slate-50 dark:bg-slate-900/50 p-6 rounded-[2rem] border border-indigo-100 dark:border-indigo-900/30 animate-fade-in">
-          <form onSubmit={handleSave} className="space-y-4">
-            <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">عنوان الاجتماع / الموضوع</label>
-                <input 
-                  value={formData.topic} 
-                  onChange={e => setFormData({...formData, topic: e.target.value})}
-                  className="w-full bg-white dark:bg-gray-800 border-none rounded-xl py-3 px-4 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 transition-all"
-                  placeholder="مثال: اجتماع مجلس الإدارة الأسبوعي"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">وقت الاجتماع</label>
-                <input 
-                  type="time"
-                  value={formData.time} 
-                  onChange={e => setFormData({...formData, time: e.target.value})}
-                  className="w-full bg-white dark:bg-gray-800 border-none rounded-xl py-3 px-4 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 transition-all"
-                />
-              </div>
-            </div>
+      {activeTab === "announcements" && (
+        <div className="space-y-4">
+          <button
+            onClick={() => {
+              setIsAddingMeeting(true);
+              setEditingMeetingId(null);
+              setMeetingForm(emptyMeeting);
+            }}
+            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-200 transition hover:bg-indigo-700 dark:shadow-none md:w-auto"
+          >
+            <Plus size={18} /> إنشاء إعلان اجتماع
+          </button>
 
-            <div className="grid md:grid-cols-2 gap-4">
-               <div className="flex gap-4 p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm">
-                  <div className="flex-1 flex flex-col gap-2">
-                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">نوع الاجتماع</label>
-                    <div className="flex gap-2">
-                       <button 
-                         type="button"
-                         onClick={() => setFormData({...formData, locationType: 'online'})}
-                         className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${formData.locationType === 'online' ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-gray-400'}`}
-                       >
-                         <Video size={14} className="inline ml-1" /> أونلاين
-                       </button>
-                       <button 
-                         type="button"
-                         onClick={() => setFormData({...formData, locationType: 'offline'})}
-                         className={`flex-1 py-2 rounded-xl text-xs font-bold transition ${formData.locationType === 'offline' ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-700 text-gray-400'}`}
-                       >
-                         <Map size={14} className="inline ml-1" /> أوفلاين
-                       </button>
-                    </div>
-                  </div>
-               </div>
-               
-               <div className="p-4 bg-white dark:bg-gray-800 rounded-2xl shadow-sm flex items-center justify-between">
-                  <div>
-                    <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">اجتماع دوري (متكرر)</p>
-                    <p className="text-xs font-bold text-slate-700 dark:text-gray-300">هل يتكرر هذا الاجتماع أسبوعياً؟</p>
-                  </div>
-                  <button 
-                    type="button"
-                    onClick={() => setFormData({...formData, isRecurring: !formData.isRecurring})}
-                    className={`w-12 h-6 rounded-full relative transition ${formData.isRecurring ? 'bg-indigo-600' : 'bg-gray-200 dark:bg-gray-700'}`}
-                  >
-                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${formData.isRecurring ? 'right-7' : 'right-1'}`} />
-                  </button>
-               </div>
-            </div>
-
-            {!formData.isRecurring ? (
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">تاريخ الاجتماع</label>
-                <input 
-                  type="date"
-                  value={formData.date} 
-                  onChange={e => setFormData({...formData, date: e.target.value})}
-                  className="w-full bg-white dark:bg-gray-800 border-none rounded-xl py-3 px-4 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 transition-all"
-                />
+          {isAddingMeeting && (
+            <form onSubmit={handleSaveMeeting} className="space-y-4 rounded-[26px] border border-indigo-100 bg-indigo-50/40 p-4 dark:border-indigo-900/30 dark:bg-indigo-900/10">
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-black text-gray-400">عنوان الاجتماع</span>
+                  <input
+                    value={meetingForm.title}
+                    onChange={(e) => setMeetingForm({ ...meetingForm, title: e.target.value })}
+                    className="w-full rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-900 dark:text-white"
+                    placeholder="مثال: الاجتماع الشهري الحضوري"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-black text-gray-400">الوقت</span>
+                  <input
+                    type="time"
+                    value={meetingForm.time}
+                    onChange={(e) => setMeetingForm({ ...meetingForm, time: e.target.value })}
+                    className="w-full rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-900 dark:text-white"
+                  />
+                </label>
               </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-[10px] font-black text-gray-400">{meetingForm.isRecurring ? "يوم التكرار" : "التاريخ"}</span>
+                  {meetingForm.isRecurring ? (
+                    <select
+                      value={meetingForm.recurrenceDay}
+                      onChange={(e) => setMeetingForm({ ...meetingForm, recurrenceDay: e.target.value })}
+                      className="w-full rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-900 dark:text-white"
+                    >
+                      <option value="Saturday">السبت</option>
+                      <option value="Sunday">الأحد</option>
+                      <option value="Monday">الاثنين</option>
+                      <option value="Tuesday">الثلاثاء</option>
+                      <option value="Wednesday">الأربعاء</option>
+                      <option value="Thursday">الخميس</option>
+                      <option value="Friday">الجمعة</option>
+                    </select>
+                  ) : (
+                    <input
+                      type="date"
+                      value={meetingForm.date}
+                      onChange={(e) => setMeetingForm({ ...meetingForm, date: e.target.value })}
+                      className="w-full rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-900 dark:text-white"
+                    />
+                  )}
+                </label>
+
+                <div>
+                  <span className="mb-1 block text-[10px] font-black text-gray-400">نوع الاجتماع</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMeetingForm({ ...meetingForm, type: "online" })}
+                      className={`rounded-2xl px-4 py-3 text-xs font-black ${meetingForm.type === "online" ? "bg-indigo-600 text-white" : "bg-white text-gray-500 dark:bg-gray-900"}`}
+                    >
+                      <Video size={14} className="ml-1 inline" /> أونلاين
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMeetingForm({ ...meetingForm, type: "offline" })}
+                      className={`rounded-2xl px-4 py-3 text-xs font-black ${meetingForm.type === "offline" ? "bg-indigo-600 text-white" : "bg-white text-gray-500 dark:bg-gray-900"}`}
+                    >
+                      <MapPin size={14} className="ml-1 inline" /> حضوري
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black text-gray-400">{meetingForm.type === "online" ? "رابط الاجتماع" : "المكان / التفاصيل"}</span>
+                <input
+                  value={meetingForm.type === "online" ? meetingForm.link : meetingForm.details}
+                  onChange={(e) => meetingForm.type === "online" ? setMeetingForm({ ...meetingForm, link: e.target.value }) : setMeetingForm({ ...meetingForm, details: e.target.value })}
+                  className="w-full rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-900 dark:text-white"
+                  placeholder={meetingForm.type === "online" ? "Zoom / Meet link" : "العنوان أو ملاحظات المكان"}
+                />
+              </label>
+
+              <div className="flex flex-col gap-3 rounded-2xl bg-white p-3 dark:bg-gray-900 md:flex-row md:items-center md:justify-between">
+                <label className="flex cursor-pointer items-center gap-3 text-sm font-black text-gray-700 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={meetingForm.isRecurring}
+                    onChange={(e) => setMeetingForm({ ...meetingForm, isRecurring: e.target.checked })}
+                    className="h-4 w-4 accent-indigo-600"
+                  />
+                  اجتماع متكرر
+                </label>
+                <label className="flex cursor-pointer items-center gap-3 text-sm font-black text-gray-700 dark:text-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={meetingForm.notificationSettings?.enabled ?? true}
+                    onChange={(e) => setMeetingForm({ ...meetingForm, notificationSettings: { ...meetingForm.notificationSettings, enabled: e.target.checked } })}
+                    className="h-4 w-4 accent-indigo-600"
+                  />
+                  تفعيل التذكيرات
+                </label>
+              </div>
+
+              <div className="rounded-2xl bg-white p-3 dark:bg-gray-900">
+                <div className="mb-3 flex items-center justify-between">
+                  <span className="text-xs font-black text-indigo-600">التذكيرات قبل الاجتماع</span>
+                  <button type="button" onClick={addReminder} className="text-xs font-black text-indigo-600">إضافة +</button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {(meetingForm.notificationSettings?.reminders || []).map((reminder: number) => (
+                    <button
+                      key={reminder}
+                      type="button"
+                      onClick={() => setMeetingForm({
+                        ...meetingForm,
+                        notificationSettings: {
+                          ...meetingForm.notificationSettings,
+                          reminders: meetingForm.notificationSettings.reminders.filter((r: number) => r !== reminder)
+                        }
+                      })}
+                      className="rounded-xl bg-indigo-50 px-3 py-2 text-[11px] font-black text-indigo-600 dark:bg-indigo-900/30"
+                    >
+                      قبل {formatReminder(reminder)} <X size={11} className="inline" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <button type="submit" className="flex-1 rounded-2xl bg-indigo-600 py-3 text-sm font-black text-white">
+                  <Save size={16} className="ml-1 inline" /> حفظ الإعلان
+                </button>
+                <button type="button" onClick={resetMeetingForm} className="rounded-2xl bg-gray-200 px-5 py-3 text-sm font-black text-gray-600 dark:bg-gray-700 dark:text-gray-200">
+                  إلغاء
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="grid gap-3">
+            {loading ? (
+              <div className="py-10 text-center text-sm font-bold text-gray-400">جار التحميل...</div>
+            ) : meetings.length === 0 ? (
+              <EmptyState text="لا توجد إعلانات اجتماعات حتى الآن" />
             ) : (
-              <div className="space-y-1">
-                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">يوم التكرار</label>
-                <select 
-                  value={formData.recurrenceDay} 
-                  onChange={e => setFormData({...formData, recurrenceDay: e.target.value})}
-                  className="w-full bg-white dark:bg-gray-800 border-none rounded-xl py-3 px-4 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
-                >
-                  {['Saturday', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map(d => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
+              meetings.map((meeting) => (
+                <MeetingCard
+                  key={meeting.id}
+                  meeting={meeting}
+                  onEdit={() => handleEditMeeting(meeting)}
+                  onDelete={() => handleDeleteMeeting(meeting.id)}
+                />
+              ))
             )}
-
-            <div className="space-y-1">
-              <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest mr-2">{formData.locationType === 'online' ? 'رابط الاجتماع' : 'تفاصيل المكان'}</label>
-              <input 
-                value={formData.locationType === 'online' ? formData.link : formData.details} 
-                onChange={e => formData.locationType === 'online' ? setFormData({...formData, link: e.target.value}) : setFormData({...formData, details: e.target.value})}
-                className="w-full bg-white dark:bg-gray-800 border-none rounded-xl py-3 px-4 text-sm font-bold shadow-sm focus:ring-2 focus:ring-indigo-500 transition-all"
-                placeholder={formData.locationType === 'online' ? "https://zoom.us/..." : "العنوان بالتفصيل"}
-              />
-            </div>
-
-            <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-800/50 space-y-3">
-               <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-black text-indigo-600 flex items-center gap-2">
-                    <Bell size={14} /> تنبيهات الاجتماع (قبل الموعد بـ)
-                  </h4>
-                  <button type="button" onClick={addReminder} className="text-[10px] font-black text-indigo-600 hover:underline">إضافة تنبيه +</button>
-               </div>
-               <div className="flex flex-wrap gap-2">
-                  {formData.notificationSettings?.reminders.map((r, i) => (
-                    <div key={i} className="bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-2 shadow-sm">
-                       {r >= 1440 ? `${r/1440} يوم` : r >= 60 ? `${r/60} ساعة` : `${r} دقيقة`}
-                       <button type="button" onClick={() => {
-                         const n = [...formData.notificationSettings!.reminders];
-                         n.splice(i, 1);
-                         setFormData({...formData, notificationSettings: {...formData.notificationSettings!, reminders: n}});
-                       }} className="text-rose-500"><X size={10}/></button>
-                    </div>
-                  ))}
-               </div>
-            </div>
-
-            <div className="flex gap-3 pt-4 border-t border-slate-200 dark:border-slate-800">
-              <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-2xl font-black text-sm shadow-xl shadow-indigo-200 dark:shadow-none transition hover:bg-indigo-700">حفظ الإعلان</button>
-              <button type="button" onClick={() => setIsAdding(false)} className="px-8 py-3 bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-gray-400 font-black rounded-2xl text-sm transition">إلغاء</button>
-            </div>
-          </form>
+          </div>
         </div>
       )}
 
-      <div className="grid gap-4">
-        {loading ? (
-          <div className="text-center py-12"><div className="animate-spin w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full mx-auto" /></div>
-        ) : meetings.length === 0 ? (
-          <div className="text-center py-12 bg-slate-50 dark:bg-slate-900/30 rounded-3xl border-2 border-dashed border-slate-200 dark:border-slate-800">
-            <Calendar className="mx-auto text-slate-300 mb-2" size={32} />
-            <p className="text-sm font-bold text-slate-400">لا توجد اجتماعات مجدولة حالياً</p>
-          </div>
-        ) : (
-          meetings.map(meeting => (
-            <div key={meeting.id} className="bg-white dark:bg-gray-800 border border-slate-100 dark:border-slate-700 p-5 rounded-3xl shadow-sm hover:shadow-md transition group">
-              <div className="flex justify-between items-start">
-                 <div className="flex gap-4">
-                    <div className={`w-14 h-14 rounded-2xl flex items-center justify-center shrink-0 ${meeting.isRecurring ? 'bg-purple-100 text-purple-600' : 'bg-indigo-100 text-indigo-600'}`}>
-                       {meeting.isRecurring ? <Repeat size={24} /> : <Calendar size={24} />}
-                    </div>
-                    <div className="space-y-1">
-                       <h4 className="font-black text-slate-800 dark:text-white">{meeting.topic}</h4>
-                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs font-bold text-slate-500">
-                          <span className="flex items-center gap-1"><Clock size={12} /> {meeting.time}</span>
-                          <span className="flex items-center gap-1">
-                             {meeting.isRecurring ? <><Repeat size={12} /> كل {meeting.recurrenceDay}</> : <><Calendar size={12} /> {meeting.date}</>}
-                          </span>
-                          <span className="flex items-center gap-1">
-                             {meeting.locationType === 'online' ? <><Video size={12} /> أونلاين</> : <><MapPin size={12} /> أوفلاين</>}
-                          </span>
-                       </div>
-                    </div>
-                 </div>
-                 <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition">
-                    <button onClick={() => { setFormData(meeting); setEditingId(meeting.id); setIsAdding(true); }} className="p-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-gray-400 rounded-xl hover:text-indigo-600 transition"><Edit2 size={16}/></button>
-                    <button onClick={() => handleDelete(meeting.id)} className="p-2 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-gray-400 rounded-xl hover:text-rose-600 transition"><Trash2 size={16}/></button>
-                 </div>
-              </div>
-              
-              <div className="mt-4 flex items-center justify-between pt-4 border-t border-slate-50 dark:border-slate-700/50">
-                 <div className="flex gap-2">
-                    {meeting.notificationSettings.reminders.map((r, i) => (
-                      <span key={i} className="text-[9px] bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 px-2 py-1 rounded-lg font-black">
-                        {r >= 1440 ? `${r/1440}ي` : r >= 60 ? `${r/60}س` : `${r}د`}
-                      </span>
-                    ))}
-                    <span className="text-[9px] bg-slate-100 dark:bg-slate-700 text-slate-400 px-2 py-1 rounded-lg font-black italic">إشعارات مفعلة</span>
-                 </div>
-                 <button className="text-[10px] font-black text-indigo-600 flex items-center gap-1 hover:underline">
-                    <Send size={12} /> إرسال إعلان الآن
-                 </button>
+      {activeTab === "history" && (
+        <div className="space-y-4">
+          <form onSubmit={handleSaveRecording} className="space-y-4 rounded-[26px] border border-blue-100 bg-blue-50/40 p-4 dark:border-blue-900/30 dark:bg-blue-900/10">
+            <div className="flex items-center gap-2">
+              <FileAudio className="text-blue-600" />
+              <div>
+                <h3 className="text-base font-black text-gray-900 dark:text-white">إضافة تسجيل اجتماع</h3>
+                <p className="text-xs font-bold text-gray-400">ينفع تختار اجتماع سابق أو تضيف تسجيل مستقل من غير إعلان.</p>
               </div>
             </div>
-          ))
-        )}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black text-gray-400">ربط باجتماع سابق (اختياري)</span>
+                <select
+                  value={recordingForm.meetingId}
+                  onChange={(e) => setRecordingForm({ ...recordingForm, meetingId: e.target.value })}
+                  className="w-full rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+                >
+                  <option value="">تسجيل مستقل</option>
+                  {meetingOptions.map((meeting) => (
+                    <option key={meeting.id} value={meeting.id}>{meeting.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black text-gray-400">عنوان التسجيل</span>
+                <input
+                  value={recordingForm.title}
+                  onChange={(e) => setRecordingForm({ ...recordingForm, title: e.target.value })}
+                  className="w-full rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+                  placeholder="مثال: تسجيل اجتماع مايو"
+                />
+              </label>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black text-gray-400">تاريخ التسجيل</span>
+                <input
+                  type="date"
+                  value={recordingForm.date}
+                  onChange={(e) => setRecordingForm({ ...recordingForm, date: e.target.value })}
+                  className="w-full rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-[10px] font-black text-gray-400">رابط الصوت Drive / أي رابط</span>
+                <input
+                  value={recordingForm.audioUrl}
+                  onChange={(e) => setRecordingForm({ ...recordingForm, audioUrl: e.target.value })}
+                  className="w-full rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+                  placeholder="https://drive.google.com/..."
+                />
+              </label>
+            </div>
+
+            <label className="flex cursor-pointer items-center justify-between rounded-2xl border border-dashed border-blue-200 bg-white px-4 py-3 text-sm font-black text-blue-600 dark:border-blue-900 dark:bg-gray-900">
+              <span className="flex items-center gap-2"><Upload size={17} /> رفع ملف صوت من الجهاز</span>
+              <span className="max-w-[45%] truncate text-xs text-gray-400">{audioFile?.name || "اختياري"}</span>
+              <input type="file" accept="audio/*" className="hidden" onChange={(e) => setAudioFile(e.target.files?.[0] || null)} />
+            </label>
+
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-black text-gray-400">ملاحظات التسجيل</span>
+              <textarea
+                value={recordingForm.notes}
+                onChange={(e) => setRecordingForm({ ...recordingForm, notes: e.target.value })}
+                className="h-24 w-full resize-none rounded-2xl border-0 bg-white px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-900 dark:text-white"
+                placeholder="ملخص سريع أو قرارات الاجتماع..."
+              />
+            </label>
+
+            <button disabled={uploading} className="w-full rounded-2xl bg-blue-600 py-3 text-sm font-black text-white disabled:opacity-50">
+              {uploading ? "جار الرفع..." : "حفظ التسجيل"}
+            </button>
+          </form>
+
+          <div className="grid gap-3">
+            {recordings.length === 0 ? (
+              <EmptyState text="لا توجد تسجيلات محفوظة حتى الآن" />
+            ) : (
+              recordings.map((recording) => (
+                <RecordingCard key={recording.id} recording={recording} onDelete={() => handleDeleteRecording(recording.id)} />
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MeetingCard({ meeting, onEdit, onDelete }: { meeting: Meeting; onEdit: () => void; onDelete: () => void }) {
+  const title = meeting.topic || meeting.title || "اجتماع بدون عنوان";
+  const type = meeting.locationType || meeting.type || "online";
+
+  return (
+    <div className="rounded-[24px] border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 gap-3">
+          <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${meeting.isRecurring ? "bg-purple-100 text-purple-600" : "bg-indigo-100 text-indigo-600"}`}>
+            {meeting.isRecurring ? <Repeat size={22} /> : <Calendar size={22} />}
+          </div>
+          <div className="min-w-0">
+            <h4 className="truncate text-sm font-black text-gray-900 dark:text-white">{title}</h4>
+            <div className="mt-2 flex flex-wrap gap-2 text-[11px] font-bold text-gray-500">
+              <span className="flex items-center gap-1"><Clock size={12} /> {meeting.time || "-"}</span>
+              <span className="flex items-center gap-1">{meeting.isRecurring ? <Repeat size={12} /> : <Calendar size={12} />} {meeting.isRecurring ? `كل ${meeting.recurrenceDay}` : meeting.date || "-"}</span>
+              <span className="flex items-center gap-1">{type === "online" ? <Video size={12} /> : <MapPin size={12} />} {type === "online" ? "أونلاين" : "حضوري"}</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex gap-1">
+          <button onClick={onEdit} className="flex h-9 w-9 items-center justify-center rounded-xl bg-gray-100 text-gray-500 dark:bg-gray-800"><Edit2 size={15} /></button>
+          <button onClick={onDelete} className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-500 dark:bg-red-900/20"><Trash2 size={15} /></button>
+        </div>
       </div>
+      {(meeting.link || meeting.details) && (
+        <div className="mt-3 rounded-2xl bg-gray-50 p-3 text-xs font-bold text-gray-500 dark:bg-gray-800 dark:text-gray-300">
+          {meeting.link ? <a href={meeting.link} target="_blank" rel="noreferrer" className="text-blue-600 underline">{meeting.link}</a> : meeting.details}
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(meeting.notificationSettings?.reminders || []).map((reminder) => (
+          <span key={reminder} className="rounded-lg bg-indigo-50 px-2 py-1 text-[10px] font-black text-indigo-600 dark:bg-indigo-900/30">
+            تذكير {reminder >= 60 ? `${reminder / 60}س` : `${reminder}د`}
+          </span>
+        ))}
+        <span className="rounded-lg bg-gray-100 px-2 py-1 text-[10px] font-black text-gray-400 dark:bg-gray-800">
+          {meeting.notificationSettings?.enabled === false ? "التذكيرات مغلقة" : "التذكيرات مفعلة"}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function RecordingCard({ recording, onDelete }: { recording: MeetingRecording; onDelete: () => void }) {
+  return (
+    <div className="rounded-[24px] border border-gray-100 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-blue-100 text-blue-600 dark:bg-blue-900/30">
+            <FileAudio size={22} />
+          </div>
+          <div className="min-w-0">
+            <h4 className="truncate text-sm font-black text-gray-900 dark:text-white">{recording.title}</h4>
+            <p className="mt-1 text-[11px] font-bold text-gray-400">{recording.meetingTopic || "تسجيل مستقل"} {recording.date ? `• ${recording.date}` : ""}</p>
+          </div>
+        </div>
+        <button onClick={onDelete} className="flex h-9 w-9 items-center justify-center rounded-xl bg-red-50 text-red-500 dark:bg-red-900/20"><Trash2 size={15} /></button>
+      </div>
+
+      {recording.audioUrl && (
+        <div className="mt-3 space-y-2">
+          <audio controls src={recording.audioUrl} className="w-full" />
+          <a href={recording.audioUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-xl bg-blue-50 px-3 py-2 text-xs font-black text-blue-600 dark:bg-blue-900/20">
+            <LinkIcon size={14} /> فتح التسجيل
+          </a>
+        </div>
+      )}
+
+      {recording.notes && (
+        <p className="mt-3 rounded-2xl bg-gray-50 p-3 text-xs font-bold leading-relaxed text-gray-500 dark:bg-gray-800 dark:text-gray-300">
+          {recording.notes}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function EmptyState({ text }: { text: string }) {
+  return (
+    <div className="rounded-[24px] border-2 border-dashed border-gray-200 bg-gray-50 py-12 text-center dark:border-gray-700 dark:bg-gray-900/40">
+      <CheckCircle2 className="mx-auto mb-2 text-gray-300" size={34} />
+      <p className="text-sm font-black text-gray-400">{text}</p>
     </div>
   );
 }

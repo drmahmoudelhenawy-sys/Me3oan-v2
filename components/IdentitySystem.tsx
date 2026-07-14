@@ -371,7 +371,7 @@ export default function IdentitySystem({ user, userProfile, isPublicView = false
     }
 
     return (
-        <div className="min-h-screen font-sans pb-20 -m-4 md:-m-8 p-4 md:p-8 overflow-x-hidden relative bg-gray-50 dark:bg-[#020617] text-gray-800 dark:text-slate-200 transition-colors duration-300">
+        <div className="mobile-module identity-module min-h-screen font-sans pb-20 -m-4 md:-m-8 p-4 md:p-8 overflow-x-hidden relative bg-gray-50 dark:bg-[#020617] text-gray-800 dark:text-slate-200 transition-colors duration-300">
             {/* Ambient Background Effects */}
             <div className="fixed top-0 left-0 w-full h-full pointer-events-none overflow-hidden z-0">
                 <div className="absolute top-[-20%] right-[-10%] w-[800px] h-[800px] bg-indigo-200/20 dark:bg-indigo-600/10 rounded-full blur-[150px] animate-pulse"></div>

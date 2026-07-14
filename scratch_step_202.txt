@@ -1,0 +1,58 @@
+Created At: 2026-05-21T00:20:04Z
+Completed At: 2026-05-21T00:20:04Z
+File Path: `file:///E:/MyApps/Me3oan-v2/Me3oan-v2-main/components/WamanAhyaahaSystem.tsx`
+Total Lines: 1050
+Total Bytes: 84907
+Showing lines 330 to 450
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+330:                 localStorage.setItem('ma3wan_blood_admin', matched.displayName);
+331:                 localStorage.setItem('ma3wan_blood_username', matched.username);
+332:                 setAdminName(matched.displayName);
+333:                 setIsAuthenticated(true);
+334:                 setViewMode('admin');
+335:             } else {
+336:                 setLoginError('اسم المستخدم أو كلمة المرور غير صحيحة');
+337:             }
+338:         } catch(e) {
+339:             setLoginError('حدث خطأ في الاتصال بالسيرفر');
+340:         }
+341:         setLoginLoading(false);
+342:     };
+343: 
+344:     const copyFormLink = () => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=donor_form`); alert("تم نسخ رابط الاستمارة"); };
+345:     const copyAdminLink = () => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=blood_admin`); alert("تم نسخ رابط الإدارة"); };
+346:     
+347:     // Submit
+348:                                 <Phone size={13}/> اتصال
+349:                             </a>
+350:                             <a href={`https://wa.me/20${donor.phone1?.startsWith('0') ? donor.phone1.substring(1) : donor.phone1}`} target="_blank" rel="noopener noreferrer" className="flex-1 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400 py-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-green-100 transition">
+351:                   
+<truncated 5379 bytes>
+24:     isPublicMode = false, forceGuestMode = false,
+425:     standaloneAdminMode = false,
+426:     tasks = [], newTask, setNewTask, handleAddTask, toggleStatus, deleteTask, setSelectedTask, onOpenAddTask
+427: }: WamanAhyaahaSystemProps) {
+428:     const [viewMode, setViewMode] = useState<'landing' | 'guest' | 'login' | 'admin' | 'volunteers_portal'>('landing');
+429:     const [showSuccessModal, setShowSuccessModal] = useState(false);
+430:     const [adminName, setAdminName] = useState("");
+431:     const [adminUsername, setAdminUsername] = useState("");
+432:     const [adminPass, setAdminPass] = useState("");
+433:     const [loginError, setLoginError] = useState("");
+434:     const [loginLoading, setLoginLoading] = useState(false);
+435:     const [isAuthenticated, setIsAuthenticated] = useState(false);
+436:     const [showSettings, setShowSettings] = useState(false);
+437:     const [bloodConfig, setBloodConfig] = useState<{ donorRecipients: Recipient[]; distressRecipients: Recipient[]; }>({ donorRecipients: [], distressRecipients: [] });
+438:     const [newRecipient, setNewRecipient] = useState({ name: "", chatId: "" });
+439:     const [activeConfigTab, setActiveConfigTab] = useState<'donors' | 'distress'>('donors');
+440:     const [showGuide, setShowGuide] = useState(false);
+441:     const isSuperAdmin = user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+442: 
+443:     const [activeTab, setActiveTab] = useState<'demand' | 'supply' | 'pending'>('demand'); 
+444:     const [donors, setDonors] = useState<any[]>([]);
+445:     const [requests, setRequests] = useState<any[]>([]);
+446:     const [loading, setLoading] = useState(false);
+447:     const [showForm, setShowForm] = useState(false); 
+448:     const [error, setError] = useState<string | null>(null);
+449: 
+450:     const [searchTerm, setSearchTerm] = useState("");
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

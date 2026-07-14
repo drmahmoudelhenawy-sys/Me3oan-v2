@@ -273,7 +273,7 @@ const CalendarSystem: React.FC<CalendarSystemProps> = ({ user, telegramConfig, o
     );
 
     return (
-        <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
+        <div className="mobile-module calendar-module flex flex-col h-full bg-gray-50 dark:bg-gray-900 overflow-hidden">
             {/* Header */}
             <header className="bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700 px-6 py-4 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-4">

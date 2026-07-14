@@ -34,6 +34,7 @@ export const TELEGRAM_ROLES = [
 ];
 
 export const USER_ROLES = [
+    { id: 'admin', name: 'مدير' },
     { id: 'member', name: 'عضو' },
     { id: 'deputy', name: 'نائب مسؤول' },
     { id: 'manager', name: 'مدير' }
@@ -67,8 +68,9 @@ export const PROJECT_CATEGORIES = [
 export const HANDOFF_STATUSES = {
   PENDING: 'pending_acceptance',
   ACCEPTED: 'accepted',
+  EXECUTED: 'executed',
   REJECTED: 'rejected',
-  REVISION: 'revision_requested'
+  REVISION: 'revision'
 };
 
 export const WORKFLOW_TEMPLATES = {

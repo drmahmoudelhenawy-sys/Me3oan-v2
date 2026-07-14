@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ma3wan Task</string>
+    <string name="title_activity_main">Ma3wan Task</string>
+    <string name="package_name">com.ma3wan.task</string>
+    <string name="custom_url_scheme">com.ma3wan.task</string>
+</resources>

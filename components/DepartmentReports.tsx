@@ -818,7 +818,7 @@ export default function DepartmentReports({ user, userProfile, departments, tele
   }
 
   return (
-    <div className="animate-fade-in-up pb-24">
+    <div className="mobile-module reports-module animate-fade-in-up pb-24">
         {/* Reports Header */}
         <div id="reports-header" className="relative overflow-hidden bg-gradient-to-l from-indigo-600/10 via-white to-white dark:from-indigo-900/20 dark:via-gray-800 dark:to-gray-800 border border-gray-100 dark:border-gray-700 p-4 rounded-2xl shadow-sm mb-6">
             <div className="flex flex-col md:flex-row items-center justify-between gap-4">

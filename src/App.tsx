@@ -271,7 +271,22 @@ export default function App() {
     );
   }
 
-  if (!user || (user.isAnonymous && safeStorage.get("localStorage", "ma3wan_magic_session") !== "true")) {
+  if (user?.isAnonymous && safeStorage.get("localStorage", "ma3wan_magic_session") === "true") {
+    safeStorage.remove("localStorage", "special_login_password");
+    safeStorage.remove("localStorage", "ma3wan_code_verified");
+    safeStorage.remove("localStorage", "ma3wan_magic_session");
+    signOut(auth).catch((error) => console.error("Failed to clear anonymous admin session:", error));
+    return (
+      <AuthScreen
+          onGuestIdentity={() => handlePublicAccess('identity')}
+          onGuestOrg={() => handlePublicAccess('org')}
+          onGuestBlood={() => handlePublicAccess('blood')}
+          onGuestDonorForm={() => handlePublicAccess('donor_form')}
+      />
+    );
+  }
+
+  if (!user || user.isAnonymous) {
     return (
         <AuthScreen 
             onGuestIdentity={() => handlePublicAccess('identity')}

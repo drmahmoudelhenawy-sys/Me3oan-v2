@@ -1,15 +1,15 @@
-
 import React, { useState, useEffect } from "react";
 import { db } from "../services/firebase";
 import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, setDoc, getDoc } from "firebase/firestore";
 import { 
     Heart, Ambulance, UserPlus, MapPin, Phone, AlertTriangle, 
     CheckCircle, X, Plus, Activity, Lock, Search, Calendar, 
-    Clock, PhoneCall, FileText, ChevronDown, ChevronUp, Edit, Trash2, UserCheck, Eye, Share2, Copy, Shield, Settings, Save, Info, Droplet, Users, UserMinus, CalendarPlus, HelpCircle, Download, Briefcase, Filter, MessageCircle, Zap, TrendingUp, Award, Star
+    Clock, PhoneCall, FileText, ChevronDown, ChevronUp, Edit, Trash2, UserCheck, Eye, EyeOff, Share2, Copy, Shield, Settings, Save, Info, Droplet, Users, UserMinus, CalendarPlus, HelpCircle, Download, Briefcase, Filter, MessageCircle, Zap, TrendingUp, Award, Star, Trophy, Mail
 } from "lucide-react";
 import { exportCsv } from "../utils/csvExport";
 import { resolveWamanRoute, sendTelegramToChatIds } from "../utils/telegramRouting";
 import TaskBoard from "./TaskBoard"; 
+import WamanAhyaahaVolunteers from "./WamanAhyaahaVolunteers";
 
 const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-", "لا أعرف"];
 const URGENCY_LEVELS = ["عاجل الآن", "خلال 24 ساعة", "موعد عملية محدد (مجدولة)"];
@@ -19,9 +19,7 @@ const SOHAG_CENTERS = [
     "العسيرات", "جزيرة شندويل", "المراغة", "طهطا", "طما", "المنشأة", "جهينة"
 ];
 
-
 const SUPER_ADMIN_EMAIL = "dr.mahmoud.elhenawy@gmail.com";
-
 
 const RBC_COMPATIBILITY: Record<string, string[]> = {
     "A+": ["A+", "A-", "O+", "O-"],
@@ -35,7 +33,6 @@ const RBC_COMPATIBILITY: Record<string, string[]> = {
     "لا أعرف": [] 
 };
 
-// Blood type color map
 const BLOOD_COLORS: Record<string, { bg: string; text: string; grad: string }> = {
     "A+":  { bg: "bg-red-100",    text: "text-red-700",    grad: "from-red-500 to-red-700" },
     "A-":  { bg: "bg-red-50",     text: "text-red-600",    grad: "from-red-400 to-red-600" },
@@ -229,10 +226,18 @@ export default function WamanAhyaahaSystem({
     standaloneAdminMode = false,
     tasks = [], newTask, setNewTask, handleAddTask, toggleStatus, deleteTask, setSelectedTask, onOpenAddTask
 }: WamanAhyaahaSystemProps) {
-    const [viewMode, setViewMode] = useState<'landing' | 'guest' | 'login' | 'admin'>('landing');
+    const [viewMode, setViewMode] = useState<'landing' | 'guest' | 'login' | 'admin' | 'volunteers_portal'>('landing');
     const [showSuccessModal, setShowSuccessModal] = useState(false);
-    const [adminName, setAdminName] = useState("");        // display name shown after login
-    const [adminUsername, setAdminUsername] = useState(""); // username field in form
+    const [newGuestInfo, setNewGuestInfo] = useState<{ name: string; phone: string; bloodType: string } | null>(null);
+    const [showPointsOffer, setShowPointsOffer] = useState(false);
+    // Portal registration fields (inside modal)
+    const [portalEmail, setPortalEmail] = useState("");
+    const [portalPass, setPortalPass] = useState("");
+    const [portalConfirm, setPortalConfirm] = useState("");
+    const [portalShowPass, setPortalShowPass] = useState(false);
+    const [portalPassError, setPortalPassError] = useState("");
+    const [adminName, setAdminName] = useState("");
+    const [adminUsername, setAdminUsername] = useState("");
     const [adminPass, setAdminPass] = useState("");
     const [loginError, setLoginError] = useState("");
     const [loginLoading, setLoginLoading] = useState(false);
@@ -244,7 +249,7 @@ export default function WamanAhyaahaSystem({
     const [showGuide, setShowGuide] = useState(false);
     const isSuperAdmin = user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
 
-    // Data State
+    // Data states
     const [activeTab, setActiveTab] = useState<'demand' | 'supply' | 'pending'>('demand'); 
     const [donors, setDonors] = useState<any[]>([]);
     const [requests, setRequests] = useState<any[]>([]);
@@ -254,11 +259,11 @@ export default function WamanAhyaahaSystem({
 
     // Filters
     const [searchTerm, setSearchTerm] = useState("");
-    const [filterGov, setFilterGov] = useState("");
     const [filterCity, setFilterCity] = useState(""); 
     const [filterBloodType, setFilterBloodType] = useState("");
     const [filterEligibleOnly, setFilterEligibleOnly] = useState(false);
 
+    // Forms
     const [donorForm, setDonorForm] = useState({
         name: "", birthDate: "", age: "", phone1: "", phone2: "",
         governorate: "سوهاج", city: "", area: "", address: "",
@@ -273,7 +278,7 @@ export default function WamanAhyaahaSystem({
         fileNumber: "", urgency: "عاجل الآن", contactPhone: "", notes: ""
     });
 
-    // Init Logic
+    // Session Routing Setup
     useEffect(() => {
         if (forceGuestMode) { setViewMode('guest'); return; }
         if (standaloneAdminMode) {
@@ -281,10 +286,11 @@ export default function WamanAhyaahaSystem({
             if (session) { setAdminName(session); setIsAuthenticated(true); setViewMode('admin'); } else { setViewMode('login'); }
             return;
         }
-        if (!isPublicMode) { setViewMode('admin'); setIsAuthenticated(true); setAdminName(user.displayName || user.email); } 
+        if (!isPublicMode && user && user.email !== 'guest') { setViewMode('admin'); setIsAuthenticated(true); setAdminName(user.displayName || user.email); } 
         else { const session = localStorage.getItem("ma3wan_blood_admin"); if (session) { setAdminName(session); setIsAuthenticated(true); setViewMode('admin'); } }
     }, [isPublicMode, user, forceGuestMode, standaloneAdminMode]);
 
+    // Fetch configuration
     useEffect(() => {
         const fetchConfig = async () => {
             try {
@@ -300,6 +306,7 @@ export default function WamanAhyaahaSystem({
         fetchConfig();
     }, []);
 
+    // Firebase Subscriptions
     useEffect(() => {
         if (viewMode === 'admin') {
             setLoading(true);
@@ -311,11 +318,47 @@ export default function WamanAhyaahaSystem({
     }, [viewMode]);
 
     // Helpers
-    const calculateAge = (dob: string) => { if (!dob) return ""; const birthDate = new Date(dob); const today = new Date(); let age = today.getFullYear() - birthDate.getFullYear(); const m = today.getMonth() - birthDate.getMonth(); if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--; return age.toString(); };
-    const isDonorEligible = (lastDonationDate: string) => { if (!lastDonationDate || lastDonationDate === 'never' || lastDonationDate === '') return true; const last = new Date(lastDonationDate); const today = new Date(); const diffDays = Math.ceil(Math.abs(today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24)); return diffDays >= 90; };
-    const handleAddRecipient = () => { if (!newRecipient.name || !newRecipient.chatId) return; const recipient: Recipient = { id: Date.now().toString(), name: newRecipient.name, chatId: newRecipient.chatId }; if (activeConfigTab === 'donors') setBloodConfig(prev => ({...prev, donorRecipients: [...prev.donorRecipients, recipient]})); else setBloodConfig(prev => ({...prev, distressRecipients: [...prev.distressRecipients, recipient]})); setNewRecipient({ name: "", chatId: "" }); };
-    const handleRemoveRecipient = (id: string, type: 'donors' | 'distress') => { if (type === 'donors') setBloodConfig(prev => ({...prev, donorRecipients: prev.donorRecipients.filter(r => r.id !== id)})); else setBloodConfig(prev => ({...prev, distressRecipients: prev.distressRecipients.filter(r => r.id !== id)})); };
-    const handleSaveConfig = async () => { try { await setDoc(doc(db, "app_settings", "blood_config"), bloodConfig); alert("تم الحفظ"); setShowSettings(false); } catch (e) { alert("خطأ"); } };
+    const calculateAge = (dob: string) => { 
+        if (!dob) return ""; 
+        const birthDate = new Date(dob); 
+        const today = new Date(); 
+        let age = today.getFullYear() - birthDate.getFullYear(); 
+        const m = today.getMonth() - birthDate.getMonth(); 
+        if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--; 
+        return age.toString(); 
+    };
+
+    const isDonorEligible = (lastDonationDate: string) => { 
+        if (!lastDonationDate || lastDonationDate === 'never' || lastDonationDate === '') return true; 
+        const last = new Date(lastDonationDate); 
+        const today = new Date(); 
+        const diffDays = Math.ceil(Math.abs(today.getTime() - last.getTime()) / (1000 * 60 * 60 * 24)); 
+        return diffDays >= 90; 
+    };
+
+    const handleAddRecipient = () => { 
+        if (!newRecipient.name || !newRecipient.chatId) return; 
+        const recipient: Recipient = { id: Date.now().toString(), name: newRecipient.name, chatId: newRecipient.chatId }; 
+        if (activeConfigTab === 'donors') setBloodConfig(prev => ({...prev, donorRecipients: [...prev.donorRecipients, recipient]})); 
+        else setBloodConfig(prev => ({...prev, distressRecipients: [...prev.distressRecipients, recipient]})); 
+        setNewRecipient({ name: "", chatId: "" }); 
+    };
+
+    const handleRemoveRecipient = (id: string, type: 'donors' | 'distress') => { 
+        if (type === 'donors') setBloodConfig(prev => ({...prev, donorRecipients: prev.donorRecipients.filter(r => r.id !== id)})); 
+        else setBloodConfig(prev => ({...prev, distressRecipients: prev.distressRecipients.filter(r => r.id !== id)})); 
+    };
+
+    const handleSaveConfig = async () => { 
+        try { 
+            await setDoc(doc(db, "app_settings", "blood_config"), bloodConfig); 
+            alert("تم حفظ الإعدادات بنجاح"); 
+            setShowSettings(false); 
+        } catch (e) { 
+            alert("حدث خطأ أثناء حفظ الإعدادات."); 
+        } 
+    };
+
     const handleAdminLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!adminUsername.trim() || !adminPass.trim()) return;
@@ -340,10 +383,6 @@ export default function WamanAhyaahaSystem({
         setLoginLoading(false);
     };
 
-    const copyFormLink = () => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=donor_form`); alert("تم نسخ رابط الاستمارة"); };
-    const copyAdminLink = () => { navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=blood_admin`); alert("تم نسخ رابط الإدارة"); };
-    
-    // Submit
     const handleGuestDonorSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!donorForm.agreement) { alert("الموافقة مطلوبة."); return; }
@@ -359,90 +398,418 @@ export default function WamanAhyaahaSystem({
                     sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
                 }
             }
+            // Save guest info for the points opt-in offer
+            setNewGuestInfo({ name: donorForm.name, phone: donorForm.phone1, bloodType: donorForm.bloodType });
             setShowSuccessModal(true);
+            setShowPointsOffer(false);
             setDonorForm({ name: "", birthDate: "", age: "", phone1: "", phone2: "", governorate: "سوهاج", city: "", area: "", address: "", bloodType: "", lastDonation: "", neverDonated: false, hasDisease: "no", bestTime: "anytime", emergencyConsent: "yes", agreement: false, status: "pending", adminNotes: "" });
         } catch (err: any) { alert("حدث خطأ أثناء التسجيل."); }
     };
 
-    const closeSuccessModal = () => { setShowSuccessModal(false); if (!forceGuestMode) setViewMode('landing'); };
+    const closeSuccessModal = () => { 
+        setShowSuccessModal(false); 
+        setShowPointsOffer(false);
+        setNewGuestInfo(null);
+        setPortalEmail(""); setPortalPass(""); setPortalConfirm(""); setPortalPassError("");
+        if (!forceGuestMode) setViewMode('landing'); 
+    };
     
-    // Actions
-    const handleExportDonors = () => { try { const data = filteredList.map(d => ({ "Name": d.name, "Type": d.bloodType, "Phone": d.phone1, "City": d.city })); exportCsv(data, "Donors.csv"); } catch (e) { alert("Error"); } };
-    const approveDonor = async (id: string, name: string) => { if(!confirm(`قبول ${name}؟`)) return; await updateDoc(doc(db, "blood_donors", id), { status: "approved" }); };
-    const deleteDonor = async (id: string) => { if(!confirm("حذف المتبرع؟")) return; await deleteDoc(doc(db, "blood_donors", id)); };
-    const markAsDonatedToday = async (id: string, name: string) => { if(!confirm(`تسجيل تبرع ${name} اليوم؟`)) return; await updateDoc(doc(db, "blood_donors", id), { lastDonation: new Date().toISOString().split('T')[0] }); };
+    const handleExportDonors = () => { 
+        try { 
+            const data = filteredList.map(d => ({ "Name": d.name, "Type": d.bloodType, "Phone": d.phone1, "City": d.city })); 
+            exportCsv(data, "Donors.csv"); 
+        } catch (e) { 
+            alert("خطأ أثناء التصدير."); 
+        } 
+    };
+
+    const approveDonor = async (id: string, name: string) => { 
+        if(!confirm(`قبول ${name}؟`)) return; 
+        await updateDoc(doc(db, "blood_donors", id), { status: "approved" }); 
+    };
+
+    const deleteDonor = async (id: string) => { 
+        if(!confirm("حذف المتبرع؟")) return; 
+        await deleteDoc(doc(db, "blood_donors", id)); 
+    };
+
+    const markAsDonatedToday = async (id: string, name: string) => { 
+        if(!confirm(`تسجيل تبرع ${name} اليوم؟`)) return; 
+        await updateDoc(doc(db, "blood_donors", id), { lastDonation: new Date().toISOString().split('T')[0] }); 
+    };
+
     const handleAddRequest = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            await addDoc(collection(db, "blood_requests"), { ...requestForm, imageUrl: "", status: 'active', created_at: new Date().toISOString(), created_by: adminName });
+            await addDoc(collection(db, "blood_requests"), { 
+                ...requestForm, 
+                imageUrl: "", 
+                status: 'active', 
+                created_at: new Date().toISOString(), 
+                created_by: adminName || "Admin" 
+            });
             if (onSendTelegram && telegramConfig?.rules) {
                 const route = resolveWamanRoute(telegramConfig, "distress");
                 if (route.chatIds.length > 0) {
-                    const msg = `🩸 <b>استغاثة عاجلة</b>\n👤 ${requestForm.patientName}\n💉 ${requestForm.productType} (${requestForm.bagsCount})\n🅾️ ${requestForm.bloodType}\n🏥 ${requestForm.hospitalName}\n📞 ${requestForm.contactPhone}`;
+                    const msg = `🆘 <b>استغاثة عاجلة بنك الدم</b>\n\n👤 <b>المريض:</b> ${requestForm.patientName}\n🩸 <b>الفصيلة المطلوبة:</b> ${requestForm.bloodType}\n💉 <b>النوع:</b> ${requestForm.productType}\n📦 <b>الأكياس المطلوبة:</b> ${requestForm.bagsCount}\n📍 <b>المستشفى:</b> ${requestForm.hospitalName} (${requestForm.governorate})\n⚡ <b>درجة العجلة:</b> ${requestForm.urgency}\n📞 <b>للتواصل:</b> ${requestForm.contactPhone}\n📝 <b>ملاحظات:</b> ${requestForm.notes || 'لا يوجد'}`;
                     sendTelegramToChatIds(onSendTelegram, route.chatIds, msg, route.botToken);
                 }
             }
+            setRequestForm({
+                patientName: "", bloodType: "A+", productType: "دم كامل",
+                bagsCount: 1, governorate: "سوهاج", hospitalName: "",
+                fileNumber: "", urgency: "عاجل الآن", contactPhone: "", notes: ""
+            });
             setShowForm(false);
-            setRequestForm({ patientName: "", bloodType: "A+", productType: "دم كامل", bagsCount: 1, governorate: "سوهاج", hospitalName: "", fileNumber: "", urgency: "عاجل الآن", contactPhone: "", notes: "" });
-        } catch (err: any) { alert("حدث خطأ."); }
+        } catch (err: any) { 
+            console.error(err);
+            alert("حدث خطأ أثناء إضافة الاستغاثة."); 
+        }
     };
-    const deleteRequest = async (id: string) => { if(!confirm("حذف الاستغاثة؟")) return; await deleteDoc(doc(db, "blood_requests", id)); };
 
-    // Lists & Filters
+    const deleteRequest = async (id: string) => {
+        if (!confirm("هل أنت متأكد من حذف هذه الاستغاثة؟")) return;
+        try {
+            await deleteDoc(doc(db, "blood_requests", id));
+        } catch (err) {
+            console.error(err);
+            alert("حدث خطأ أثناء الحذف.");
+        }
+    };
+
+    const updateTaskCategory = async (taskId: string, newCategory: string) => {
+        try {
+            await updateDoc(doc(db, "tasks", taskId), { category: newCategory });
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    // Derived States
+    const approvedDonors = donors.filter(d => d.status === 'approved');
     const pendingDonors = donors.filter(d => d.status === 'pending');
-    const approvedDonors = donors.filter(d => d.status === 'approved' || d.status === 'eligible');
     const eligibleDonors = approvedDonors.filter(d => isDonorEligible(d.lastDonation));
     const activeRequests = requests.filter(r => r.status === 'active');
-    const governoratesList = Array.from(new Set(approvedDonors.map(d => d.governorate).filter(Boolean))).sort();
-    const allCitiesForFilter = Array.from(new Set([...SOHAG_CENTERS, ...approvedDonors.map(d => d.city).filter(Boolean)])).sort();
-    
-    const listToShow = activeTab === 'pending' ? pendingDonors : activeTab === 'supply' ? approvedDonors : [];
-    const filteredList = listToShow.filter(d => { 
-        const matchesSearch = !searchTerm || (d.name?.includes(searchTerm) || d.phone1?.includes(searchTerm) || d.city?.includes(searchTerm) || d.bloodType?.includes(searchTerm)); 
-        const matchesGov = filterGov ? d.governorate === filterGov : true; 
-        const matchesCity = filterCity ? d.city === filterCity : true; 
-        const matchesType = filterBloodType ? d.bloodType === filterBloodType : true; 
-        const matchesEligible = filterEligibleOnly ? isDonorEligible(d.lastDonation) : true; 
-        return matchesSearch && matchesGov && matchesCity && matchesType && matchesEligible; 
+
+    const listToShow = activeTab === 'pending' ? pendingDonors : approvedDonors;
+
+    const filteredList = listToShow.filter(d => {
+        const matchesSearch = !searchTerm.trim() || 
+            d.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            d.phone1?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            d.phone2?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            d.city?.toLowerCase().includes(searchTerm.toLowerCase());
+        
+        const matchesBloodType = !filterBloodType || d.bloodType === filterBloodType;
+        const matchesCity = !filterCity || d.city === filterCity;
+        const matchesEligible = !filterEligibleOnly || isDonorEligible(d.lastDonation);
+        
+        return matchesSearch && matchesBloodType && matchesCity && matchesEligible;
     });
 
-    const updateTaskCategory = () => {}; // placeholder
+    const allCitiesForFilter = Array.from(new Set(donors.map(d => d.city).filter(Boolean)));
+
+    const copyFormLink = () => { 
+        navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=donor_form`); 
+        alert("تم نسخ رابط الاستمارة"); 
+    };
+
+    const copyAdminLink = () => { 
+        navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=blood_admin`); 
+        alert("تم نسخ رابط الإدارة"); 
+    };
 
     if (error) return <div className="text-center p-8 text-red-500 font-bold">{error}</div>;
 
+    // ─── VIEW: VOLUNTEERS PORTAL ──────────────────────────────────────────────
+    if (viewMode === 'volunteers_portal') {
+        return (
+            <div className="fixed inset-0 z-[200] overflow-y-auto">
+                <WamanAhyaahaVolunteers 
+                    onBack={() => setViewMode('landing')} 
+                    currentUserEmail={user?.email || undefined}
+                    currentUserName={user?.displayName || user?.email || undefined}
+                />
+            </div>
+        );
+    }
+
     // ─── VIEW: LANDING ────────────────────────────────────────────────────────
     if (viewMode === 'landing') return (
-        <div className="flex flex-col items-center justify-center min-h-[70vh] gap-8 p-4">
-            <div className="text-center">
-                <div className="w-20 h-20 bg-gradient-to-br from-red-500 to-rose-700 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-xl shadow-red-500/30">
-                    <Activity size={40} className="text-white"/>
+        <div className="flex flex-col items-center justify-center min-h-[75vh] p-4 bg-gray-50 dark:bg-gray-950 font-sans animate-fade-in" dir="rtl">
+            <div className="w-full max-w-lg bg-white dark:bg-gray-900 rounded-3xl shadow-xl border border-gray-100 dark:border-gray-800 p-8 text-center relative overflow-hidden transition-all duration-300">
+                {/* Visual Accent */}
+                <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-red-500 via-rose-600 to-red-700"/>
+                <div className="absolute -top-16 -right-16 w-36 h-36 bg-red-500/10 rounded-full blur-3xl pointer-events-none"/>
+                <div className="absolute -bottom-16 -left-16 w-36 h-36 bg-rose-500/10 rounded-full blur-3xl pointer-events-none"/>
+                
+                {/* Logo Section */}
+                <div className="relative w-24 h-24 bg-gradient-to-br from-red-500 to-rose-700 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/20 transform hover:scale-105 transition-all duration-300">
+                    <Droplet size={48} className="text-white animate-pulse" />
                 </div>
-                <h2 className="text-4xl font-black text-gray-800 dark:text-white">ومن أحياها</h2>
-                <p className="text-gray-400 mt-2">نظام إدارة التبرع بالدم</p>
-            </div>
-            <div className="grid grid-cols-1 gap-3 w-full max-w-sm">
-                <button onClick={() => setViewMode('guest')} className="bg-gradient-to-r from-red-600 to-rose-700 text-white p-4 rounded-2xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 hover:opacity-90 transition">
-                    <UserPlus size={20}/> تسجيل كمتبرع
-                </button>
-                <button onClick={() => setViewMode('login')} className="bg-gray-800 dark:bg-gray-700 text-white p-4 rounded-2xl font-bold flex items-center justify-center gap-2 hover:bg-gray-700 transition">
-                    <Lock size={20}/> دخول الإدارة
-                </button>
+
+                <h1 className="text-3xl font-black text-gray-800 dark:text-white mb-2 tracking-tight">نظام ومن أحياها</h1>
+                <p className="text-sm text-gray-400 dark:text-gray-400 mb-8 max-w-md mx-auto leading-relaxed">
+                    منصة متكاملة لتنظيم حملات التبرع بالدم، إدارة المتبرعين، وتنسيق الاستغاثات وتكريم المتطوعين بسوهاج
+                </p>
+
+                {/* Primary Actions Grid */}
+                <div className="grid gap-4 text-right mb-6">
+                    {/* Action 1: Guest Donor Form */}
+                    <button 
+                        onClick={() => setViewMode('guest')}
+                        className="group flex items-center justify-between p-4 bg-red-50/50 hover:bg-red-50 dark:bg-red-950/20 dark:hover:bg-red-950/40 border border-red-100 dark:border-red-900/30 rounded-2xl transition-all duration-300 hover:shadow-md hover:-translate-y-0.5"
+                    >
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-red-500 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform duration-300">
+                                <Heart size={22} className="fill-current" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-800 dark:text-white text-base">تسجيل كمتبرع بالدم</h3>
+                                <p className="text-xs text-gray-400 mt-1">سجل فصيلتك لتكون مستعداً لإنقاذ حياة مريض</p>
+                            </div>
+                        </div>
+                        <ChevronDown size={18} className="text-red-400 transform -rotate-90" />
+                    </button>
+
+                    {/* Action 2: Volunteers Portal */}
+                    <button 
+                        onClick={() => setViewMode('volunteers_portal')}
+                        className="group flex items-center justify-between p-4 bg-rose-50/50 hover:bg-rose-50 dark:bg-rose-950/20 dark:hover:bg-rose-950/40 border border-rose-100 dark:border-rose-900/30 rounded-2xl transition-all duration-300 hover:shadow-md hover:-translate-y-0.5"
+                    >
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-rose-600 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform duration-300">
+                                <Star size={22} className="fill-current" />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-800 dark:text-white text-base">بوابة المتطوعين (Gamification)</h3>
+                                <p className="text-xs text-gray-400 mt-1">تحديات، نقاط، أوسمة المتطوعين، وجدول الحملات</p>
+                            </div>
+                        </div>
+                        <ChevronDown size={18} className="text-rose-400 transform -rotate-90" />
+                    </button>
+
+                    {/* Action 3: Admin Dashboard */}
+                    <button 
+                        onClick={() => {
+                            if (isAuthenticated) {
+                                setViewMode('admin');
+                            } else {
+                                setViewMode('login');
+                            }
+                        }}
+                        className="group flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 dark:bg-gray-800/40 dark:hover:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-2xl transition-all duration-300 hover:shadow-md hover:-translate-y-0.5"
+                    >
+                        <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-gray-700 text-white rounded-xl flex items-center justify-center shadow-md group-hover:scale-110 transition-transform duration-300">
+                                <Lock size={20} />
+                            </div>
+                            <div>
+                                <h3 className="font-bold text-gray-800 dark:text-white text-base">لوحة التحكم والإدارة</h3>
+                                <p className="text-xs text-gray-400 mt-1">خاص بالمسؤولين لمتابعة الطلبات وتنسيق التبرع</p>
+                            </div>
+                        </div>
+                        <ChevronDown size={18} className="text-gray-400 transform -rotate-90" />
+                    </button>
+                </div>
+
+                <div className="text-[10px] text-gray-400 font-medium pt-2 border-t border-gray-100 dark:border-gray-800 flex items-center justify-center gap-1.5">
+                    <Info size={12}/>
+                    <span>جميع البيانات مشفرة وآمنة تماماً وفق معايير الخصوصية</span>
+                </div>
             </div>
         </div>
     );
     
     // ─── VIEW: GUEST FORM ─────────────────────────────────────────────────────
     if (viewMode === 'guest') return (
-        <div className="max-w-lg mx-auto animate-fade-in-up my-4 pb-8"> 
+        <div className="max-w-lg mx-auto animate-fade-in-up my-4 pb-8" dir="rtl"> 
             {showSuccessModal && (
-                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center">
-                    <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl text-center shadow-2xl max-w-sm w-full mx-4">
-                        <div className="w-16 h-16 bg-emerald-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                            <CheckCircle size={32} className="text-emerald-600"/>
-                        </div>
-                        <h3 className="text-xl font-black text-gray-800 dark:text-white mb-2">شكراً لك!</h3>
-                        <p className="text-gray-500 text-sm mb-6">تم تسجيلك كمتبرع بنجاح. سيتواصل معك فريقنا قريباً.</p>
-                        <button onClick={closeSuccessModal} className="bg-gradient-to-r from-emerald-500 to-green-600 text-white px-8 py-3 rounded-xl font-bold w-full">عودة</button>
+                <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-900 rounded-3xl shadow-2xl max-w-sm w-full mx-4 overflow-hidden">
+
+                        {!showPointsOffer ? (
+                            // ── Step 1: Success + opt-in offer ──
+                            <>
+                                {/* Header */}
+                                <div className="bg-gradient-to-br from-emerald-500 to-green-600 p-6 text-white text-center relative">
+                                    <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3 border border-white/30">
+                                        <CheckCircle size={34} strokeWidth={1.5} className="text-white"/>
+                                    </div>
+                                    <h3 className="text-xl font-black">تم التسجيل!</h3>
+                                    <p className="text-emerald-100 text-sm mt-1">شكراً {newGuestInfo?.name}! سيتواصل معك فريقنا قريباً.</p>
+                                </div>
+
+                                <div className="p-5 flex flex-col gap-4">
+                                    {/* Points offer card */}
+                                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 rounded-2xl p-4">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className="w-9 h-9 bg-amber-100 dark:bg-amber-900/40 rounded-xl flex items-center justify-center shrink-0">
+                                                <Trophy size={20} strokeWidth={1.5} className="text-amber-600 dark:text-amber-400"/>
+                                            </div>
+                                            <div>
+                                                <p className="text-sm font-black text-gray-800 dark:text-white">هل تريد الانضمام لبوابة المتطوعين؟</p>
+                                                <p className="text-[10px] text-amber-600 dark:text-amber-400 font-bold">اكسب نقاط XP، أوسمة، وصدارة المتطوعين!</p>
+                                            </div>
+                                        </div>
+
+                                        {/* 4 feature icons - flat line style */}
+                                        <div className="grid grid-cols-4 gap-2 mb-3">
+                                            {[
+                                                { Icon: Droplet,    label: 'نقاط XP',   color: 'text-red-500',    bg: 'bg-red-50 dark:bg-red-900/30' },
+                                                { Icon: Award,      label: 'أوسمة',     color: 'text-amber-500',  bg: 'bg-amber-50 dark:bg-amber-900/30' },
+                                                { Icon: TrendingUp, label: 'صدارة',     color: 'text-blue-500',   bg: 'bg-blue-50 dark:bg-blue-900/30' },
+                                                { Icon: Star,       label: 'مستويات',   color: 'text-yellow-500', bg: 'bg-yellow-50 dark:bg-yellow-900/30' },
+                                            ].map(({ Icon, label, color, bg }) => (
+                                                <div key={label} className={`${bg} rounded-xl p-2 text-center border border-white/50 dark:border-white/10`}>
+                                                    <Icon size={20} strokeWidth={1.5} className={`${color} mx-auto`}/>
+                                                    <p className="text-[9px] font-black text-gray-600 dark:text-gray-300 mt-1">{label}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="flex items-center justify-center gap-1.5 bg-amber-100 dark:bg-amber-900/40 rounded-xl py-2">
+                                            <Zap size={13} strokeWidth={1.5} className="text-amber-600 dark:text-amber-400"/>
+                                            <p className="text-[10px] text-amber-700 dark:text-amber-400 font-black">+50 نقطة ترحيبية مجاناً عند الانضمام!</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Buttons */}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <button
+                                            onClick={() => setShowPointsOffer(true)}
+                                            className="py-3 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 text-gray-900 font-black text-sm shadow-lg shadow-amber-400/30 hover:opacity-90 transition active:scale-95 flex items-center justify-center gap-2"
+                                        >
+                                            <Trophy size={16} strokeWidth={2}/>
+                                            نعم! أريد
+                                        </button>
+                                        <button
+                                            onClick={closeSuccessModal}
+                                            className="py-3 rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 font-bold text-sm hover:bg-gray-200 dark:hover:bg-gray-700 transition active:scale-95 flex items-center justify-center gap-2"
+                                        >
+                                            <X size={16} strokeWidth={2}/>
+                                            لا شكراً
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            // ── Step 2: Email + Password form ──
+                            <>
+                                {/* Header */}
+                                <div className="bg-gradient-to-br from-amber-500 to-yellow-500 p-5 text-gray-900 relative">
+                                    <button onClick={() => setShowPointsOffer(false)} className="absolute top-4 right-4 w-7 h-7 bg-black/10 rounded-full flex items-center justify-center hover:bg-black/20 transition">
+                                        <ChevronDown size={15} strokeWidth={2}/>
+                                    </button>
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-white/30 rounded-xl flex items-center justify-center border border-white/40">
+                                            <Trophy size={22} strokeWidth={1.5}/>
+                                        </div>
+                                        <div>
+                                            <h3 className="text-base font-black">بيانات الدخول</h3>
+                                            <p className="text-[11px] opacity-80 font-medium">ستستخدمها لدخول بوابة المتطوعين</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-5 flex flex-col gap-3">
+                                    {/* Email */}
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+                                            <Mail size={11} strokeWidth={2}/> البريد الإلكتروني *
+                                        </label>
+                                        <input
+                                            type="email"
+                                            dir="ltr"
+                                            className="w-full p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 dark:text-white rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-400 transition"
+                                            placeholder="example@email.com"
+                                            value={portalEmail}
+                                            onChange={e => { setPortalEmail(e.target.value); setPortalPassError(""); }}
+                                        />
+                                    </div>
+
+                                    {/* Password */}
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+                                            <Lock size={11} strokeWidth={2}/> كلمة المرور *
+                                        </label>
+                                        <div className="relative">
+                                            <input
+                                                type={portalShowPass ? "text" : "password"}
+                                                dir="ltr"
+                                                className="w-full p-3 pr-10 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 dark:text-white rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-400 transition"
+                                                placeholder="6 أحرف على الأقل"
+                                                value={portalPass}
+                                                onChange={e => { setPortalPass(e.target.value); setPortalPassError(""); }}
+                                            />
+                                            <button type="button" onClick={() => setPortalShowPass(p => !p)} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition">
+                                                {portalShowPass ? <EyeOff size={15} strokeWidth={1.5}/> : <Eye size={15} strokeWidth={1.5}/>}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Confirm Password */}
+                                    <div>
+                                        <label className="text-[10px] font-black text-gray-400 uppercase tracking-wider block mb-1.5 flex items-center gap-1">
+                                            <Shield size={11} strokeWidth={2}/> تأكيد كلمة المرور *
+                                        </label>
+                                        <input
+                                            type="password"
+                                            dir="ltr"
+                                            className={`w-full p-3 bg-gray-50 dark:bg-gray-800 border rounded-xl text-sm outline-none focus:ring-2 transition dark:text-white ${
+                                                portalConfirm && portalConfirm !== portalPass
+                                                    ? 'border-red-400 focus:ring-red-300'
+                                                    : 'border-gray-200 dark:border-gray-700 focus:ring-amber-400'
+                                            }`}
+                                            placeholder="أعد كتابة كلمة المرور"
+                                            value={portalConfirm}
+                                            onChange={e => { setPortalConfirm(e.target.value); setPortalPassError(""); }}
+                                        />
+                                        {portalConfirm && portalConfirm !== portalPass && (
+                                            <p className="text-[10px] text-red-500 mt-1 flex items-center gap-1">
+                                                <AlertTriangle size={10} strokeWidth={2}/> كلمتا المرور غير متطابقتين
+                                            </p>
+                                        )}
+                                        {portalPassError && (
+                                            <p className="text-[10px] text-red-500 mt-1 flex items-center gap-1">
+                                                <AlertTriangle size={10} strokeWidth={2}/> {portalPassError}
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Submit */}
+                                    <button
+                                        onClick={() => {
+                                            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                                            if (!portalEmail.trim()) { setPortalPassError("يرجى إدخال البريد الإلكتروني"); return; }
+                                            if (!emailRegex.test(portalEmail.trim())) { setPortalPassError("بريد إلكتروني غير صحيح"); return; }
+                                            if (portalPass.trim().length < 6) { setPortalPassError("كلمة المرور 6 أحرف على الأقل"); return; }
+                                            if (portalPass.trim() !== portalConfirm.trim()) { setPortalPassError("كلمتا المرور غير متطابقتين"); return; }
+                                            // All good - save prefill with credentials and navigate
+                                            if (newGuestInfo) {
+                                                localStorage.setItem('waman_prefill_volunteer', JSON.stringify({
+                                                    ...newGuestInfo,
+                                                    email: portalEmail.trim().toLowerCase(),
+                                                    password: portalPass.trim(),
+                                                    wantsPoints: true,
+                                                }));
+                                            }
+                                            setShowSuccessModal(false);
+                                            setShowPointsOffer(false);
+                                            setNewGuestInfo(null);
+                                            setPortalEmail(""); setPortalPass(""); setPortalConfirm(""); setPortalPassError("");
+                                            setViewMode('volunteers_portal');
+                                        }}
+                                        className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-amber-500 to-yellow-400 text-gray-900 font-black text-sm shadow-lg shadow-amber-400/30 hover:opacity-90 transition active:scale-95 flex items-center justify-center gap-2"
+                                    >
+                                        <Trophy size={16} strokeWidth={2}/>
+                                        إنشاء حساب بوابة المتطوعين
+                                    </button>
+
+                                    <p className="text-center text-[10px] text-gray-400 dark:text-gray-500">بياناتك السابقة محفوظة ومربوطة بحسابك تلقائياً</p>
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             )}
@@ -547,7 +914,7 @@ export default function WamanAhyaahaSystem({
 
                     <button type="submit" disabled={!donorForm.agreement || !donorForm.bloodType} className="w-full bg-gradient-to-r from-red-600 to-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-xl font-black text-base shadow-lg shadow-red-500/30 hover:opacity-90 transition">
                         تسجيل التبرع 🩸
-                    </button>
+                     </button>
                 </form>
             </div>
         </div>
@@ -555,10 +922,11 @@ export default function WamanAhyaahaSystem({
 
     // ─── VIEW: LOGIN ──────────────────────────────────────────────────────────
     if (viewMode === 'login') return (
-        <div className="flex items-center justify-center min-h-[70vh] p-4">
-            <div className="w-full max-w-sm">
+        <div className="flex items-center justify-center min-h-[70vh] p-4" dir="rtl">
+            <div className="w-full max-w-sm animate-fade-in">
                 {/* Header card */}
                 <div className="relative bg-gradient-to-br from-red-600 to-rose-800 p-6 rounded-3xl mb-4 text-white text-center shadow-xl shadow-red-500/30 overflow-hidden">
+                    <button onClick={() => setViewMode('landing')} className="absolute top-4 left-4 w-8 h-8 bg-white/20 hover:bg-white/30 flex items-center justify-center rounded-full text-white transition"><X size={15}/></button>
                     <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/10 rounded-full blur-2xl pointer-events-none"/>
                     <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg">
                         <Lock size={30}/>
@@ -615,12 +983,11 @@ export default function WamanAhyaahaSystem({
                             }
                         </button>
                     </form>
-                    <button onClick={() => setViewMode('guest')} className="w-full mt-3 py-2 text-xs text-gray-400 hover:text-red-600 transition font-medium">أريد التسجيل كمتبرع فقط →</button>
+                    <button onClick={() => setViewMode('landing')} className="w-full mt-3 py-2 text-xs text-gray-400 hover:text-red-600 transition font-medium">عودة للرئيسية →</button>
                 </div>
             </div>
         </div>
     );
-
 
     // ─── VIEW: ADMIN ──────────────────────────────────────────────────────────
     return (
@@ -633,12 +1000,13 @@ export default function WamanAhyaahaSystem({
                     {/* Title Row */}
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2.5">
+                            <button onClick={() => setViewMode('landing')} className="w-8 h-8 bg-white/20 hover:bg-white/30 rounded-xl flex items-center justify-center text-white transition mr-1" title="العودة للرئيسية"><X size={15}/></button>
                             <div className="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center">
                                 <Activity size={20} className="text-white"/>
                             </div>
                             <div>
                                 <h1 className="font-black text-white text-base leading-tight">ومن أحياها</h1>
-                                <p className="text-red-200 text-[10px]">إدارة التبرع بالدم</p>
+                                <p className="text-red-200 text-[10px]">لوحة الإدارة والمتابعة</p>
                             </div>
                         </div>
                         <div className="flex items-center gap-1.5">

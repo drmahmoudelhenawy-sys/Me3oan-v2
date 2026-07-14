@@ -1,0 +1,58 @@
+Created At: 2026-05-21T00:20:06Z
+Completed At: 2026-05-21T00:20:06Z
+File Path: `file:///E:/MyApps/Me3oan-v2/Me3oan-v2-main/components/WamanAhyaahaSystem.tsx`
+Total Lines: 1050
+Total Bytes: 84907
+Showing lines 1 to 250
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+1: 
+2: import React, { useState, useEffect } from "react";
+3: import { db } from "../services/firebase";
+4: import { collection, addDoc, updateDoc, deleteDoc, doc, onSnapshot, query, orderBy, setDoc, getDoc } from "firebase/firestore";
+5: import { 
+6:     Heart, Ambulance, UserPlus, MapPin, Phone, AlertTriangle, 
+7:     CheckCircle, X, Plus, Activity, Lock, Search, Calendar, 
+8:     Clock, PhoneCall, FileText, ChevronDown, ChevronUp, Edit, Trash2, UserCheck, Eye, Share2, Copy, Shield, Settings, Save, Info, Droplet, Users, UserMinus, CalendarPlus, HelpCircle, Download, Briefcase, Filter, MessageCircle, Zap, TrendingUp, Award, Star
+9: } from "lucide-react";
+10: import { exportCsv } from "../utils/csvExport";
+11: import { resolveWamanRoute, sendTelegramToChatIds } from "../utils/telegramRouting";
+12: import TaskBoard from "./TaskBoard"; 
+13: import WamanAhyaahaVolunteers from "./WamanAhyaahaVolunteers";
+14: 
+15: const BLOOD_TYPES = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-", "لا أعرف"];
+16: const URGENCY_LEVELS = ["عاجل الآن", "خلال 24 ساعة", "موعد عملية محدد (مجدولة)"];
+17: const PRODUCT_TYPES = ["دم كامل", "صفائح دموية", "بلازما", "كرات دم حمراء (Packed RBCs)", "أخرى"];
+18: const SOHAG_CENTERS = [
+19:     "سوهاج", "أخميم", "ساقلتة", "دار السلام", "البلينا", "جرجا", 
+20:     "العسيرات", "جزيرة شندويل", "المراغة", "طهطا", "طما", "المنشأة", "جهينة"
+21: ];
+22: 
+23: 
+24: const SUPER_ADMIN_EM
+<truncated 15716 bytes>
+──────────────────────────────
+227: export default function WamanAhyaahaSystem({ 
+228:     user, telegramConfig, onSendTelegram, 
+229:     isPublicMode = false, forceGuestMode = false,
+230:     standaloneAdminMode = false,
+231:     tasks = [], newTask, setNewTask, handleAddTask, toggleStatus, deleteTask, setSelectedTask, onOpenAddTask
+232: }: WamanAhyaahaSystemProps) {
+233:     const [viewMode, setViewMode] = useState<'landing' | 'guest' | 'login' | 'admin' | 'volunteers_portal'>('landing');
+234:     const [showSuccessModal, setShowSuccessModal] = useState(false);
+235:     const [adminName, setAdminName] = useState("");        // display name shown after login
+236:     const [adminUsername, setAdminUsername] = useState(""); // username field in form
+237:     const [adminPass, setAdminPass] = useState("");
+238:     const [loginError, setLoginError] = useState("");
+239:     const [loginLoading, setLoginLoading] = useState(false);
+240:     const [isAuthenticated, setIsAuthenticated] = useState(false);
+241:     const [showSettings, setShowSettings] = useState(false);
+242:     const [bloodConfig, setBloodConfig] = useState<{ donorRecipients: Recipient[]; distressRecipients: Recipient[]; }>({ donorRecipients: [], distressRecipients: [] });
+243:     const [newRecipient, setNewRecipient] = useState({ name: "", chatId: "" });
+244:     const [activeConfigTab, setActiveConfigTab] = useState<'donors' | 'distress'>('donors');
+245:     const [showGuide, setShowGuide] = useState(false);
+246:     const isSuperAdmin = user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+247: 
+248:     // Data State
+249:     const [activeTab, setActiveTab] = useState<'demand' | 'supply' | 'pending'>('demand'); 
+250:     const [donors, setDonors] = useState<any[]>([]);
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

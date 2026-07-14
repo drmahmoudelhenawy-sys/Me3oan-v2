@@ -77,6 +77,23 @@ service cloud.firestore {
       allow write: if isStaff();
     }
 
+    match /waman_campaigns/{docId} {
+      allow get, list: if true;
+      allow write: if isStaff();
+    }
+
+    match /waman_volunteers/{docId} {
+      allow get, list: if true;
+      allow create, update: if isAuthenticated();
+      allow delete: if isStaff();
+    }
+
+    match /waman_points_logs/{docId} {
+      allow get, list: if isAuthenticated();
+      allow create: if isAuthenticated();
+      allow update, delete: if isStaff();
+    }
+
     // =========================================================
     // بيانات خاصة بالموظفين فقط
     // =========================================================

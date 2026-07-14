@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
-import { db } from "../services/firebase";
-import { collection, getDocs, doc, updateDoc } from "firebase/firestore";
-import { Users, Save } from "lucide-react";
+import { auth, db } from "../services/firebase";
+import { collection, getDocs, doc, updateDoc, deleteDoc } from "firebase/firestore";
+import { Users, Save, Trash2 } from "lucide-react";
 import { DEPARTMENTS, USER_ROLES, CHARITY_ROLES } from "../utils/constants";
 
 const PERMISSIONS = [
@@ -13,7 +13,10 @@ const PERMISSIONS = [
     { key: "canManageTelegram", color: "accent-blue-600" },
     { key: "canPostAnnouncements", color: "accent-red-600" },
     { key: "canViewReports", color: "accent-cyan-600" },
-    { key: "canAccessSeniorManagement", color: "accent-slate-900" }
+    { key: "canManagePoints", color: "accent-amber-600" },
+    { key: "canAccessWamanAhyaaha", color: "accent-red-600" },
+    { key: "canAccessSeniorManagement", color: "accent-slate-900" },
+    { key: "canViewHR", color: "accent-rose-600" }
 ];
 
 const buildUserUpdatePayload = (user: any) => ({
@@ -27,8 +30,27 @@ const buildUserUpdatePayload = (user: any) => ({
     canManageTelegram: !!user.canManageTelegram,
     canPostAnnouncements: !!user.canPostAnnouncements,
     canViewReports: !!user.canViewReports,
-    canAccessSeniorManagement: !!user.canAccessSeniorManagement
+    canManagePoints: !!user.canManagePoints,
+    canAccessWamanAhyaaha: !!user.canAccessWamanAhyaaha,
+    canAccessSeniorManagement: !!user.canAccessSeniorManagement,
+    canViewHR: !!user.canViewHR
 });
+
+const getSaveErrorMessage = (error: any) => {
+    if (auth.currentUser?.isAnonymous) {
+        return "فشل الحفظ لأن جلسة المدير غير موثقة. سجّل الدخول ببريد المدير ثم حاول مرة أخرى.";
+    }
+
+    if (error?.code === "permission-denied") {
+        return "فشل الحفظ: حسابك الحالي لا يملك صلاحية تعديل المستخدمين في Firebase.";
+    }
+
+    if (error?.code === "not-found") {
+        return "فشل الحفظ: أحد حسابات المستخدمين غير موجود في قاعدة البيانات.";
+    }
+
+    return `فشل حفظ بعض التغييرات${error?.message ? `: ${error.message}` : ""}`;
+};
 
 export default function UserManagement() {
     const [users, setUsers] = useState<any[]>([]);
@@ -66,12 +88,26 @@ export default function UserManagement() {
             await fetchUsers();
         } catch (error) {
             console.error(error);
-            alert("فشل حفظ بعض التغييرات");
+            alert(getSaveErrorMessage(error));
         } finally {
             setSaving(false);
         }
     };
-
+    const handleDeleteUser = async (userId: string) => {
+        if (!window.confirm("هل أنت متأكد من حذف هذا المستخدم نهائياً؟ لا يمكن التراجع عن هذا الإجراء.")) return;
+        try {
+            await deleteDoc(doc(db, "users", userId));
+            setUsers(prev => prev.filter(u => u.id !== userId));
+            setDirtyUserIds(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(userId);
+                return newSet;
+            });
+        } catch (e) {
+            console.error(e);
+            alert("حدث خطأ أثناء حذف المستخدم.");
+        }
+    };
     const SaveAllButton = () => (
         <button
             onClick={saveAllChanges}
@@ -136,16 +172,21 @@ export default function UserManagement() {
                                                     <th className="p-4 text-center font-black text-gray-500">البوت</th>
                                                     <th className="p-4 text-center font-black text-gray-500">إعلانات</th>
                                                     <th className="p-4 text-center font-black text-gray-500">تقارير</th>
+                                                    <th className="p-4 text-center font-black text-gray-500">النقاط</th>
+                                                    <th className="p-4 text-center font-black text-gray-500">ومن أحياها</th>
                                                     <th className="p-4 text-center font-black text-gray-500">إدارة عليا</th>
-                                                    <th className="p-4 font-black text-gray-500 text-center">الحالة</th>
+                                                    <th className="p-4 font-black text-gray-500 text-center">الحالة / إجراءات</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-gray-50 dark:divide-gray-700 transition-colors">
                                                 {deptUsers.map(user => (
                                                     <tr key={user.id} className="hover:bg-indigo-50/20 dark:hover:bg-indigo-900/10 transition-colors group">
                                                         <td className="p-4 min-w-[150px]">
-                                                            <div className="font-black text-gray-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                                            <div className="font-black text-gray-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors flex items-center gap-2">
                                                                 {user.displayName || "عضو جديد"}
+                                                                {user.id === auth.currentUser?.uid && (
+                                                                    <span className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 px-2 py-0.5 rounded text-[10px] whitespace-nowrap">(حسابي)</span>
+                                                                )}
                                                             </div>
                                                             <div className="text-[10px] text-gray-400 font-medium truncate max-w-[140px]">{user.email}</div>
                                                         </td>
@@ -181,12 +222,23 @@ export default function UserManagement() {
                                                             </td>
                                                         ))}
 
-                                                        <td className="p-4 text-center">
-                                                            {dirtyUserIds.has(user.id) ? (
-                                                                <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-[10px] font-black text-amber-600">غير محفوظ</span>
-                                                            ) : (
-                                                                <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black text-emerald-600">محفوظ</span>
-                                                            )}
+                                                        <td className="p-4">
+                                                            <div className="flex items-center justify-center gap-3">
+                                                                {dirtyUserIds.has(user.id) ? (
+                                                                    <span className="inline-flex rounded-full bg-amber-50 px-3 py-1 text-[10px] font-black text-amber-600">غير محفوظ</span>
+                                                                ) : (
+                                                                    <span className="inline-flex rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black text-emerald-600">محفوظ</span>
+                                                                )}
+                                                                {user.id !== auth.currentUser?.uid && (
+                                                                    <button 
+                                                                        onClick={() => handleDeleteUser(user.id)}
+                                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                                        title="حذف المستخدم"
+                                                                    >
+                                                                        <Trash2 size={16} />
+                                                                    </button>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
                                                 ))}

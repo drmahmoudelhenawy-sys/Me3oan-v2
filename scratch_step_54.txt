@@ -1,0 +1,34 @@
+Created At: 2026-05-20T23:17:11Z
+Completed At: 2026-05-20T23:17:11Z
+File Path: `file:///e:/MyApps/Me3oan-v2/Me3oan-v2-main/components/WamanAhyaahaSystem.tsx`
+Total Lines: 904
+Total Bytes: 75933
+Showing lines 220 to 245
+The following code has been modified to include a line number before every line, in the format: <line_number>: <original_line>. Please note that any changes targeting the original code should remove the line number, colon, and leading space.
+220:             </div>
+221:         </div>
+222:     );
+223: };
+224: 
+225: // ─── Main Component ───────────────────────────────────────────────────────────
+226: export default function WamanAhyaahaSystem({ 
+227:     user, telegramConfig, onSendTelegram, 
+228:     isPublicMode = false, forceGuestMode = false,
+229:     standaloneAdminMode = false,
+230:     tasks = [], newTask, setNewTask, handleAddTask, toggleStatus, deleteTask, setSelectedTask, onOpenAddTask
+231: }: WamanAhyaahaSystemProps) {
+232:     const [viewMode, setViewMode] = useState<'landing' | 'guest' | 'login' | 'admin'>('landing');
+233:     const [showSuccessModal, setShowSuccessModal] = useState(false);
+234:     const [adminName, setAdminName] = useState("");        // display name shown after login
+235:     const [adminUsername, setAdminUsername] = useState(""); // username field in form
+236:     const [adminPass, setAdminPass] = useState("");
+237:     const [loginError, setLoginError] = useState("");
+238:     const [loginLoading, setLoginLoading] = useState(false);
+239:     const [isAuthenticated, setIsAuthenticated] = useState(false);
+240:     const [showSettings, setShowSettings] = useState(false);
+241:     const [bloodConfig, setBloodConfig] = useState<{ donorRecipients: Recipient[]; distressRecipients: Recipient[]; }>({ donorRecipients: [], distressRecipients: [] });
+242:     const [newRecipient, setNewRecipient] = useState({ name: "", chatId: "" });
+243:     const [activeConfigTab, setActiveConfigTab] = useState<'donors' | 'distress'>('donors');
+244:     const [showGuide, setShowGuide] = useState(false);
+245:     const isSuperAdmin = user?.email?.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase();
+The above content does NOT show the entire file contents. If you need to view any lines of the file which were not shown to complete your task, call this tool again to view those lines.

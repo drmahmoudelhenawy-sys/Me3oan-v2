@@ -358,12 +358,9 @@ export const SettingsModal = ({
                                 value={userProfile?.role || 'member'}
                                 onChange={(e: any) => setUserProfile({...userProfile, role: e.target.value})}
                             >
-                                <optgroup label="أدوار عامة">
-                                    {USER_ROLES.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
-                                </optgroup>
-                                <optgroup label="أدوار القسم الخيري">
-                                    {CHARITY_ROLES.map(role => <option key={role.id} value={role.id}>{role.name}</option>)}
-                                </optgroup>
+                                {USER_ROLES.filter(role => role.id !== 'admin').map(role => (
+                                    <option key={role.id} value={role.id}>{role.name}</option>
+                                ))}
                             </select>
                         </div>
                         <button className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-bold hover:opacity-90 transition shadow-lg shadow-indigo-500/30 text-sm">
@@ -1044,7 +1041,6 @@ export const CreateEventModal = ({
                             )}
                         </div>
                     </div>
-
                     {/* Final Action Area */}
                     <div className="pt-8 pb-4">
                         <button 
@@ -1149,106 +1145,106 @@ export const TelegramConfigModal = ({ isOpen, onClose, config, onSave, departmen
                 </div>
                 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
-                        <>
-                            {/* Add New Contact Form */}
-                            <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-3">
-                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300">إضافة جهة اتصال جديدة</h4>
-                        <div className="grid grid-cols-2 gap-3">
-                            <input className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" placeholder="الاسم (مثلاً: م. أحمد)" value={newContact.name} onChange={e => setNewContact({...newContact, name: e.target.value})} />
-                            <input className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" placeholder="Chat ID" value={newContact.chatId} onChange={e => setNewContact({...newContact, chatId: e.target.value})} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            {activeTab !== 'waman' ? (
-                                <select className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" value={selectedDept} onChange={e => {
-                                    setSelectedDept(e.target.value);
-                                    setNewContact({...newContact, responsibleForDept: ''});
-                                }}>
-                                    <option value="general">الإدارة العامة</option>
-                                    {departments.map((d: any) => <option key={d.id} value={d.id}>{d.nameAr}</option>)}
-                                </select>
-                            ) : (
-                                <select className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" value={newContact.type} onChange={e => setNewContact({...newContact, type: e.target.value as any})}>
-                                    <option value="donor">مستقبلي المتبرعين</option>
-                                    <option value="distress">مستقبلي الاستغاثات</option>
-                                </select>
-                            )}
-                            {activeTab === 'general' && (
-                                <>
-                                    <select className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" value={newContact.role} onChange={e => setNewContact({...newContact, role: e.target.value})}>
-                                        <option value="">بدون دور محدد</option>
-                                        {TELEGRAM_ROLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    <>
+                        {/* Add New Contact Form */}
+                        <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-2xl border border-gray-100 dark:border-gray-700 space-y-3">
+                            <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300">إضافة جهة اتصال جديدة</h4>
+                            <div className="grid grid-cols-2 gap-3">
+                                <input className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" placeholder="الاسم (مثلاً: م. أحمد)" value={newContact.name} onChange={e => setNewContact({...newContact, name: e.target.value})} />
+                                <input className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" placeholder="Chat ID" value={newContact.chatId} onChange={e => setNewContact({...newContact, chatId: e.target.value})} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                {activeTab !== 'waman' ? (
+                                    <select className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" value={selectedDept} onChange={e => {
+                                        setSelectedDept(e.target.value);
+                                        setNewContact({...newContact, responsibleForDept: ''});
+                                    }}>
+                                        <option value="general">الإدارة العامة</option>
+                                        {departments.map((d: any) => <option key={d.id} value={d.id}>{d.nameAr}</option>)}
                                     </select>
-                                    
-                                    {selectedDept === 'hr' && (
-                                        <select 
-                                            className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white col-span-2"
-                                            value={newContact.responsibleForDept}
-                                            onChange={e => setNewContact({...newContact, responsibleForDept: e.target.value})}
-                                        >
-                                            <option value="">-- مسؤول عن قسم --</option>
-                                            <option value="general">الموارد البشرية (عام)</option>
-                                            {departments.filter((d: any) => d.id !== 'hr').map((d: any) => (
-                                                <option key={d.id} value={d.id}>{d.nameAr}</option>
-                                            ))}
+                                ) : (
+                                    <select className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" value={newContact.type} onChange={e => setNewContact({...newContact, type: e.target.value as any})}>
+                                        <option value="donor">مستقبلي المتبرعين</option>
+                                        <option value="distress">مستقبلي الاستغاثات</option>
+                                    </select>
+                                )}
+                                {activeTab === 'general' && (
+                                    <>
+                                        <select className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white" value={newContact.role} onChange={e => setNewContact({...newContact, role: e.target.value})}>
+                                            <option value="">بدون دور محدد</option>
+                                            {TELEGRAM_ROLES.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                                         </select>
-                                    )}
-                                </>
-                            )}
+                                        
+                                        {selectedDept === 'hr' && (
+                                            <select 
+                                                className="p-2 border rounded-lg text-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white col-span-2"
+                                                value={newContact.responsibleForDept}
+                                                onChange={e => setNewContact({...newContact, responsibleForDept: e.target.value})}
+                                            >
+                                                <option value="">-- مسؤول عن قسم --</option>
+                                                <option value="general">الموارد البشرية (عام)</option>
+                                                {departments.filter((d: any) => d.id !== 'hr').map((d: any) => (
+                                                    <option key={d.id} value={d.id}>{d.nameAr}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                    </>
+                                )}
+                            </div>
+                            <button onClick={handleAddContact} className="w-full bg-blue-600 text-white py-2 rounded-xl font-bold text-sm flex items-center justify-center gap-2"><Plus size={18}/> إضافة للقائمة</button>
                         </div>
-                        <button onClick={handleAddContact} className="w-full bg-blue-600 text-white py-2 rounded-xl font-bold text-sm flex items-center justify-center gap-2"><Plus size={18}/> إضافة للقائمة</button>
-                    </div>
 
-                    {/* Contacts List */}
-                    <div className="space-y-4">
-                        {activeTab === 'general' && localConfig.generalContacts.map((dept: any) => (
-                            <div key={dept.departmentId} className="space-y-2">
-                                <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{dept.departmentId === 'general' ? 'الإدارة العامة' : departments.find((d: any) => d.id === dept.departmentId)?.nameAr || dept.departmentId}</h5>
-                                {dept.contacts.map((c: any, idx: number) => (
-                                    <div key={idx} className="flex justify-between items-center bg-white dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
-                                        <div>
-                                            <p className="text-sm font-bold dark:text-white">
-                                                {c.name} 
-                                                {c.responsibleForDept && <span className="text-xs text-indigo-500 mr-2">(مسؤول {departments.find((d: any) => d.id === c.responsibleForDept)?.nameAr || c.responsibleForDept})</span>}
-                                            </p>
-                                            <p className="text-[10px] text-gray-400 font-mono">{c.chatId} {c.role && `• ${TELEGRAM_ROLES.find(r => r.id === c.role)?.name || c.role}`}</p>
+                        {/* Contacts List */}
+                        <div className="space-y-4">
+                            {activeTab === 'general' && localConfig.generalContacts.map((dept: any) => (
+                                <div key={dept.departmentId} className="space-y-2">
+                                    <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{dept.departmentId === 'general' ? 'الإدارة العامة' : departments.find((d: any) => d.id === dept.departmentId)?.nameAr || dept.departmentId}</h5>
+                                    {dept.contacts.map((c: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between items-center bg-white dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+                                            <div>
+                                                <p className="text-sm font-bold dark:text-white">
+                                                    {c.name} 
+                                                    {c.responsibleForDept && <span className="text-xs text-indigo-500 mr-2">(مسؤول {departments.find((d: any) => d.id === c.responsibleForDept)?.nameAr || c.responsibleForDept})</span>}
+                                                </p>
+                                                <p className="text-[10px] text-gray-400 font-mono">{c.chatId} {c.role && `• ${TELEGRAM_ROLES.find(r => r.id === c.role)?.name || c.role}`}</p>
+                                            </div>
+                                            <button onClick={() => handleDeleteContact('general', dept.departmentId, idx)} className="text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"><Trash2 size={16}/></button>
                                         </div>
-                                        <button onClick={() => handleDeleteContact('general', dept.departmentId, idx)} className="text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"><Trash2 size={16}/></button>
-                                    </div>
-                                ))}
-                            </div>
-                        ))}
+                                    ))}
+                                </div>
+                            ))}
 
-                        {activeTab === 'volunteer' && localConfig.volunteerContacts.map((dept: any) => (
-                            <div key={dept.departmentId} className="space-y-2">
-                                <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{dept.departmentId === 'general' ? 'الإدارة العامة' : departments.find((d: any) => d.id === dept.departmentId)?.nameAr || dept.departmentId}</h5>
-                                {dept.contacts.map((c: any, idx: number) => (
-                                    <div key={idx} className="flex justify-between items-center bg-white dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
-                                        <div>
-                                            <p className="text-sm font-bold dark:text-white">{c.name}</p>
-                                            <p className="text-[10px] text-gray-400 font-mono">{c.chatId}</p>
+                            {activeTab === 'volunteer' && localConfig.volunteerContacts.map((dept: any) => (
+                                <div key={dept.departmentId} className="space-y-2">
+                                    <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{dept.departmentId === 'general' ? 'الإدارة العامة' : departments.find((d: any) => d.id === dept.departmentId)?.nameAr || dept.departmentId}</h5>
+                                    {dept.contacts.map((c: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between items-center bg-white dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+                                            <div>
+                                                <p className="text-sm font-bold dark:text-white">{c.name}</p>
+                                                <p className="text-[10px] text-gray-400 font-mono">{c.chatId}</p>
+                                            </div>
+                                            <button onClick={() => handleDeleteContact('volunteer', dept.departmentId, idx)} className="text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"><Trash2 size={16}/></button>
                                         </div>
-                                        <button onClick={() => handleDeleteContact('volunteer', dept.departmentId, idx)} className="text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"><Trash2 size={16}/></button>
-                                    </div>
-                                ))}
-                            </div>
-                        ))}
+                                    ))}
+                                </div>
+                            ))}
 
-                        {activeTab === 'waman' && localConfig.wamanAhyaahaContacts.map((group: any) => (
-                            <div key={group.type} className="space-y-2">
-                                <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{group.type === 'donor' ? 'مستقبلي المتبرعين' : 'مستقبلي الاستغاثات'}</h5>
-                                {group.contacts.map((c: any, idx: number) => (
-                                    <div key={idx} className="flex justify-between items-center bg-white dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
-                                        <div>
-                                            <p className="text-sm font-bold dark:text-white">{c.name}</p>
-                                            <p className="text-[10px] text-gray-400 font-mono">{c.chatId}</p>
+                            {activeTab === 'waman' && localConfig.wamanAhyaahaContacts.map((group: any) => (
+                                <div key={group.type} className="space-y-2">
+                                    <h5 className="text-xs font-bold text-gray-400 uppercase tracking-wider">{group.type === 'donor' ? 'مستقبلي المتبرعين' : 'مستقبلي الاستغاثات'}</h5>
+                                    {group.contacts.map((c: any, idx: number) => (
+                                        <div key={idx} className="flex justify-between items-center bg-white dark:bg-gray-700 p-3 rounded-xl border border-gray-100 dark:border-gray-600">
+                                            <div>
+                                                <p className="text-sm font-bold dark:text-white">{c.name}</p>
+                                                <p className="text-[10px] text-gray-400 font-mono">{c.chatId}</p>
+                                            </div>
+                                            <button onClick={() => handleDeleteContact('waman', group.type, idx)} className="text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"><Trash2 size={16}/></button>
                                         </div>
-                                        <button onClick={() => handleDeleteContact('waman', group.type, idx)} className="text-red-500 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"><Trash2 size={16}/></button>
-                                    </div>
-                                ))}
-                            </div>
-                        ))}
-                    </div>
-                        </>
+                                    ))}
+                                </div>
+                            ))}
+                        </div>
+                    </>
                 </div>
 
                 <div className="flex justify-end gap-4 p-6 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
@@ -1263,7 +1259,7 @@ export const TelegramConfigModal = ({ isOpen, onClose, config, onSave, departmen
 };
 
 export const ProfileSetupModal = ({ 
-    show, profileSetup, setProfileSetup, saveUserProfile 
+    show, profileSetup, setProfileSetup, saveUserProfile, onLogout 
 }: any) => {
     if (!show) return null;
     return (
@@ -1288,40 +1284,17 @@ export const ProfileSetupModal = ({
                             autoFocus 
                         />
                     </div>
-                    
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 mb-1">القسم</label>
-                        <select 
-                            required
-                            className="w-full p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 outline-none font-bold text-gray-800 dark:text-white appearance-none"
-                            value={profileSetup.departmentId}
-                            onChange={(e) => setProfileSetup({...profileSetup, departmentId: e.target.value})}
-                        >
-                            <option value="">-- اختر القسم --</option>
-                            {DEPARTMENTS.map(dept => (
-                                <option key={dept.id} value={dept.id}>{dept.nameAr || dept.name}</option>
-                            ))}
-                        </select>
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 mb-1">اللقب</label>
-                        <select 
-                            required
-                            className="w-full p-4 bg-gray-50 dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-700 outline-none font-bold text-gray-800 dark:text-white appearance-none"
-                            value={profileSetup.role}
-                            onChange={(e) => setProfileSetup({...profileSetup, role: e.target.value})}
-                        >
-                            <option value="">-- اختر اللقب --</option>
-                            {profileSetup.departmentId === 'charity' ? (
-                                CHARITY_ROLES.map(role => <option key={role.id} value={role.id}>{role.name}</option>)
-                            ) : (
-                                USER_ROLES.map(role => <option key={role.id} value={role.id}>{role.name}</option>)
-                            )}
-                        </select>
-                    </div>
-
                     <button className="w-full mt-4 bg-indigo-600 text-white py-4 rounded-xl font-bold text-lg hover:bg-indigo-700 shadow-lg transition transform hover:scale-[1.02]">حفظ ومتابعة</button>
+                    
+                    {onLogout && (
+                        <button 
+                            type="button" 
+                            onClick={onLogout}
+                            className="w-full mt-2 text-center text-xs font-bold text-gray-400 hover:text-red-500 transition py-2"
+                        >
+                            تسجيل الخروج والعودة لصفحة الدخول
+                        </button>
+                    )}
                 </form>
             </div>
         </div>
