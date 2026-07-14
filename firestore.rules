@@ -79,7 +79,8 @@ service cloud.firestore {
 
     match /waman_campaigns/{docId} {
       allow get, list: if true;
-      allow write: if isStaff();
+      allow create, delete: if isStaff();
+      allow update: if isStaff() || (isAuthenticated() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['volunteersRegistered', 'updatedAt']));
     }
 
     match /waman_volunteers/{docId} {
